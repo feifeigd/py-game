@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 Actor 模型
 
@@ -22,7 +21,7 @@ from engine.util import log
 _live_actors = weakref.WeakSet()
 
 
-class Actor(object):
+class Actor:
     _STOP = object()
 
     def __init__(self):
@@ -34,7 +33,12 @@ class Actor(object):
     def start(self):
         """启动 actor 消息循环"""
         _live_actors.add(self)
+
+        # asyncio.ensure_future 的作用是：
+        # 把一个协程（coroutine）包装成任务并立刻排入事件循环执行，
+        # 返回一个 Future/Task 对象。
         self._task = asyncio.ensure_future(self._run())
+
         return self
 
     def stop(self):
@@ -58,7 +62,7 @@ class Actor(object):
     def ask(self, key, *args, **kwargs):
         """异步投递，返回可 await 的结果"""
         if self._stopped:
-            raise RuntimeError('ask to stopped actor: %s' % key)
+            raise RuntimeError(f'ask to stopped actor: {key}')
         fut = asyncio.get_event_loop().create_future()
         self._mailbox.put_nowait((key, args, kwargs, fut))
         return fut
@@ -86,7 +90,7 @@ class Actor(object):
         snake = re.sub(r'(?<!^)(?=[A-Z])', '_', key).lower()
         meth = getattr(self, 'do_' + snake.replace('.', '_'), None)
         if meth is None:
-            raise KeyError('%r has no handler for message %s' % (self, key))
+            raise KeyError(f'{self!r} has no handler for message {key}')
         result = meth(*args, **kwargs)
         if inspect.isawaitable(result):
             result = await result
@@ -108,7 +112,8 @@ def rebind_actor_classes():
         try:
             module = importlib.import_module(cls.__module__)
             new_cls = getattr(module, cls.__name__, None)
-        except Exception:
+        except Exception as exc:
+            log.exception('failed to reload actor class %s.%s: %s', cls.__module__, cls.__name__, exc)
             continue
         if new_cls is not None and new_cls is not cls and isinstance(new_cls, type):
             try:

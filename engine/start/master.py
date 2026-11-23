@@ -9,18 +9,16 @@ master 服务运行在主进程中。用法（每个项目目录下的 start.py�
 """
 import json
 import multiprocessing
-import os
-import sys
 
-from engine.start.service import run_service, MASTER_SERVICE
+from engine.start.service import MASTER_SERVICE, run_service
 
 
-class Master(object):
+class Master:
     def __init__(self, config):
         if isinstance(config, str):
             with open(config, 'r', encoding='utf-8') as fp:
                 config = json.load(fp)
-        self._config = config
+        self._config = config # dict
         self._children = []
 
     def start(self):
@@ -32,7 +30,7 @@ class Master(object):
             proc = ctx.Process(
                 target=run_service,
                 args=(service_name, self._config),
-                name='pygame-%s' % service_name)
+                name=f'pygame-{service_name}')
             proc.start()
             self._children.append(proc)
 
@@ -46,4 +44,4 @@ class Master(object):
                 if proc.is_alive():
                     proc.terminate()
             for proc in self._children:
-                proc.join(timeout=3)
+                proc.join(timeout=300)

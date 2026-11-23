@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 消息处理器注册表
 
@@ -7,7 +6,6 @@
 
 热更新重新加载模块时，装饰器会再次执行并覆盖旧函数，实现逻辑热更。
 """
-import asyncio
 import inspect
 
 from engine.util import log
@@ -39,7 +37,7 @@ async def dispatch(key, *args, **kwargs):
     """分发一条消息到注册的处理函数，返回其结果"""
     func = _HANDLERS.get(key)
     if func is None:
-        raise KeyError('no handler for key: %s' % key)
+        raise KeyError(f'no handler for key: {key}')
     result = func(*args, **kwargs)
     if inspect.isawaitable(result):
         result = await result

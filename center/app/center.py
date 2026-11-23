@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 center 进程组（中心服务）
 
@@ -13,7 +12,7 @@ from engine.util import log
 
 class CenterActor(Actor):
     def __init__(self):
-        super(CenterActor, self).__init__()
+        super().__init__()
         self.online_reports = {}  # 组名 -> 在线人数
 
     async def do_report_online(self, group, count):
@@ -28,7 +27,7 @@ class CenterActor(Actor):
 if 'center_actor' not in globals():
     center_actor = CenterActor()
 else:
-    center_actor.__class__ = CenterActor
+    center_actor.__class__ = CenterActor # type: ignore
 
 
 @handler('center.reportOnline')
