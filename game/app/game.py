@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 game 组单人进程（game1 / game2，玩家进程）
 
@@ -23,11 +22,11 @@ class Player(Actor):
     """玩家 actor：一个在线玩家一个实例"""
 
     def __init__(self, account, session):
-        super(Player, self).__init__()
+        super().__init__()
         self.account = account
         self.session = session
         # 角色数据（真实项目里走 db/cache 层，这里内存演示）
-        self.name = '勇者_%s' % account
+        self.name = f'勇者_{account}'
         self.level = 1
         self.exp = 0
         self.diamond = 0

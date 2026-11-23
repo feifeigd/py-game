@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 game 组全局进程（world，运行在 master 服务中）
 
@@ -25,7 +24,7 @@ class WorldActor(Actor):
     """全局进程的主 actor：所有全局状态都在这里"""
 
     def __init__(self):
-        super(WorldActor, self).__init__()
+        super().__init__()
         self.tokens = {}          # account -> token（待验证的登录令牌）
         self.player_locations = {}  # account -> 所在服务名(game1/game2)
         self.chat_count = 0
@@ -66,7 +65,7 @@ class WorldActor(Actor):
         service_name = self.player_locations.get(account)
         if service_name:
             await api.call_service(service_name, 'game.addRecharge', account, item, count)
-            return {'ret': 0, 'msg': 'recharge delivered to %s' % service_name}
+            return {'ret': 0, 'msg': f'recharge delivered to {service_name}'}
         # 玩家不在线，挂离线充值
         self.offline_recharges.setdefault(account, []).append((item, count))
         log.notice('offline recharge for %s: %s x%s', account, item, count)

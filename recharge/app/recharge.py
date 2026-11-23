@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 recharge 组充值服务
 

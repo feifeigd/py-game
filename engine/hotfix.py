@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 代码热更新
 
@@ -18,7 +17,7 @@ from engine.core.actor import rebind_actor_classes
 from engine.util import log
 
 
-def get_package_modules(package):
+def get_package_modules(package: str):
     prefix = package + '.'
     return [(name, m) for name, m in sys.modules.items()
             if name == package or name.startswith(prefix)]

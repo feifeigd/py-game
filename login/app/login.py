@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 login 组登录服务
 
@@ -21,7 +20,9 @@ GAME_CLUSTER = 'game'  # game 进程组的组间名
 
 
 def _pick_game_addr(account):
-    """按账号哈希把玩家分配到某个 gameN 进程"""
+    """按账号哈希把玩家分配到某个 gameN 进程
+    @return game_service, game_addr
+    """
     game_servers = CTX.config.get('gameServers', {})
     if not game_servers:
         return None

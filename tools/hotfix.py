@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 热更新工具
 
@@ -15,7 +14,8 @@ import json
 import os
 import sys
 
-sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(1, ROOT)
 
 from engine.net import protocol
 
