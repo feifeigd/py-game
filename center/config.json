@@ -1,0 +1,21 @@
+{
+  "serverId": null,
+  "serverType": "center",
+
+  "log": {
+    "level": "DEBUG",
+    "path": "./log",
+    "isPrint": true
+  },
+
+  "services": {
+    "master": {
+      "port": 31001,
+      "app": "app.center",
+      "cluster": {
+        "clusterPort": 31000,
+        "remoteAddrs": {}
+      }
+    }
+  }
+}

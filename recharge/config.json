@@ -1,0 +1,32 @@
+{
+  "serverId": null,
+  "serverType": "recharge",
+
+  "log": {
+    "level": "DEBUG",
+    "path": "./log",
+    "isPrint": true
+  },
+
+  "services": {
+    "master": {
+      "port": 41001,
+      "app": "app.master",
+      "cluster": {
+        "clusterPort": 41000,
+        "remoteAddrs": {
+          "game": "127.0.0.1:21000"
+        }
+      }
+    },
+
+    "recharge": {
+      "port": 41002,
+      "app": "app.recharge",
+      "webServer": {
+        "addr": "127.0.0.1:41100",
+        "maxConnection": 400
+      }
+    }
+  }
+}

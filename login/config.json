@@ -1,0 +1,37 @@
+{
+  "serverId": null,
+  "serverType": "login",
+
+  "log": {
+    "level": "DEBUG",
+    "path": "./log",
+    "isPrint": true
+  },
+
+  "gameServers": {
+    "game1": "127.0.0.1:21101",
+    "game2": "127.0.0.1:21102"
+  },
+
+  "services": {
+    "master": {
+      "port": 11001,
+      "app": "app.master",
+      "cluster": {
+        "clusterPort": 11000,
+        "remoteAddrs": {
+          "game": "127.0.0.1:21000"
+        }
+      }
+    },
+
+    "login": {
+      "port": 11002,
+      "app": "app.login",
+      "tcpServer": {
+        "addr": "127.0.0.1:11100",
+        "maxConnection": 2000
+      }
+    }
+  }
+}

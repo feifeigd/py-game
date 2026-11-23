@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行产物
+run/
+log/
+*.log
+game/log/
+login/log/
+center/log/
+recharge/log/
+
+# 工具
+.agents/
+
+# Unity
+client/Library/
+client/Temp/
+client/Logs/
+client/obj/
+client/UserSettings/
+client/Assembly-CSharp.csproj
+client/*.sln
+client/.vs/
+
+# OS
+Thumbs.db
+Desktop.ini
