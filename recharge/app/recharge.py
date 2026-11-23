@@ -43,5 +43,6 @@ def list_orders():
 
 def init():
     # 把 HTTP 路由挂到本服务的 web server 上
+    assert CTX.web_server is not None
     CTX.web_server.route('/pay')(pay)
     log.notice('recharge service inited, /pay ready')

@@ -4,13 +4,13 @@
 ## py-game
 
 Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity 客户端。
-纯标准库实现，零第三方依赖。架构细节见 `README.md`，Unity 搭建步骤见 `client/README.md`。
+纯标准库实现，零第三方依赖。架构细节见 `README.md`，Unity 搭建步骤见 `client/unity/README.md`。
 
 ## Where things are
 
 - 引擎（与业务无关）: `engine/` —— actor、组内/组间 RPC、热更新、多进程启动
 - 业务进程组: `login/` `game/` `center/` `recharge/`，各自 `config.json` + `start.py` + `app/`
-- Unity 客户端: `client/`，入口 `Assets/Scripts/Bootstrap.cs`
+- Unity 客户端: `client/unity/`，入口 `Assets/Scripts/Bootstrap.cs`
 - 联调与热更工具: `tools/`
 
 ## Running and verifying

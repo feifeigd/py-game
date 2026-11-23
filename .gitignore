@@ -16,14 +16,14 @@ recharge/log/
 .agents/
 
 # Unity
-client/Library/
-client/Temp/
-client/Logs/
-client/obj/
-client/UserSettings/
-client/Assembly-CSharp.csproj
-client/*.sln
-client/.vs/
+client/unity/Library/
+client/unity/Temp/
+client/unity/Logs/
+client/unity/obj/
+client/unity/UserSettings/
+client/unity/Assembly-CSharp.csproj
+client/unity/*.sln
+client/unity/.vs/
 
 # OS
 Thumbs.db

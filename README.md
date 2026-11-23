@@ -63,7 +63,7 @@ py-game/
   tools/hotfix.py          热更新工具
   tools/test_client.py     模拟客户端（与 Unity 同协议）
   tools/test_all.py        一键联调：起四个组->登录->聊天->充值->热更->再登录
-  client/                  Unity 客户端工程（见 client/README.md）
+  client/unity/            Unity 客户端工程（见 client/unity/README.md）
 ```
 
 ## 快速开始
