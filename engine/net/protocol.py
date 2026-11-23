@@ -2,7 +2,7 @@
 通信协议: 4 字节大端长度前缀 + UTF-8 JSON
 
 客户端消息、组内 RPC、组间 RPC 均使用本协议，
-Unity 客户端使用同样的帧格式（见 client/Assets/Scripts/Net/Packet.cs）。
+Unity 客户端使用同样的帧格式（见 client/unity/Assets/Scripts/Net/Packet.cs）。
 """
 import asyncio
 import json

@@ -27,7 +27,7 @@ Assets/Scripts/
    cd py-game/recharge && python start.py
    ```
 
-2. 用 Unity Hub「打开」本目录（client/）作为项目（2021 LTS 及以上均可）。
+2. 用 Unity Hub「打开」本目录（client/unity/）作为项目（2021 LTS 及以上均可）。
 
 3. 新建一个空场景，创建一个空 GameObject 命名为 `Bootstrap`，
    挂上 `Bootstrap` 脚本，保存场景为 `Assets/Scenes/Main.unity`。
