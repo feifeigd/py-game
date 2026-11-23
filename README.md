@@ -111,6 +111,8 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 
 ## 热更新说明
 
+完整指南见 [docs/hotfix.md](docs/hotfix.md)（原理、包级/模块级/函数级三种粒度、状态保护写法、常见坑）。
+
 - 触发的 reload 只针对 `app` 包（业务代码），engine 不参与热更。
 - 模块级状态用 `if 'x' not in globals():` 守卫保住（`importlib.reload` 复用模块 `__dict__`），
   参考 `game/app/world.py`、`game/app/game.py` 的写法。
