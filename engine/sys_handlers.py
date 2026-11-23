@@ -152,6 +152,9 @@ async def stop():
             result = CTX.stop_handler()
             if asyncio.iscoroutine(result):
                 await result
+        from engine import db
+        if db.has_db():
+            await db.get().close()
     except Exception:
         log.exception('stop error')
     log.notice('%s stopped, bye', CTX.service_name)

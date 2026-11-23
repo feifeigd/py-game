@@ -4,19 +4,24 @@ recharge 组充值服务
 对外暴露 HTTP 接口接收支付平台回调（演示用 GET/POST /pay），
 到账后跨组调用 game 组全局进程，由 world 路由到玩家所在进程发货。
 
+订单持久化（PostgreSQL，增量更新）:
+  - 收到回调先落 orders 表（status=pending），订单是充值的事实来源
+  - 发货成功后只更新 status / delivered_at 两列
+  - 玩家不在线时订单保持 pending（由 game 组 world 挂离线补发）
+
 测试:
     curl "http://127.0.0.1:41100/pay?account=foo&item=diamond&count=100"
 """
+import uuid
+from datetime import datetime, timezone
+
 from engine import api
+from engine import db
 from engine.context import CTX
 from engine.core.handler import handler
 from engine.util import log
 
 GAME_CLUSTER = 'game'
-
-# 热更新安全：保住充值记录
-if '_orders' not in globals():
-    _orders = []  # 演示用充值流水
 
 
 async def pay(query, body):
@@ -27,22 +32,51 @@ async def pay(query, body):
     if not account or count <= 0:
         return {'ret': 1, 'msg': 'bad params'}
 
-    _orders.append({'account': account, 'item': item, 'count': count})
-    log.notice('recharge order: %s %s x%s', account, item, count)
+    gdb = db.get()
+    order_id = uuid.uuid4().hex
+    await gdb.insert('orders', {
+        'order_id': order_id,
+        'account': account,
+        'item': item,
+        'count': count,
+        'status': 'pending',
+        'created_at': datetime.now(timezone.utc),
+        'delivered_at': None,
+    })
+    log.notice('recharge order %s: %s %s x%s', order_id, account, item, count)
 
     # 跨组调用 game 组 -> world 路由到玩家所在进程 -> 玩家 actor 发货
     result = await api.call_cluster(GAME_CLUSTER, 'recharge.onRecharge',
                                     account, item, count)
-    return {'ret': 0, 'msg': 'success', 'detail': result}
+    # 发货成功: 增量更新订单状态（玩家不在线则保持 pending 等补发）
+    if result.get('ret') == 0 and 'delivered' in result.get('msg', ''):
+        await gdb.update_columns('orders', 'order_id', order_id, {
+            'status': 'delivered',
+            'delivered_at': datetime.now(timezone.utc),
+        })
+    return {'ret': 0, 'msg': 'success', 'orderId': order_id, 'detail': result}
 
 
 @handler('recharge.listOrders')
-def list_orders():
-    return list(_orders)
+async def list_orders():
+    rows = await db.get().fetch(
+        'SELECT order_id, account, item, count, status, created_at, delivered_at'
+        ' FROM orders ORDER BY created_at DESC LIMIT 100')
+    return [dict(r) for r in rows]
 
 
-def init():
-    # 把 HTTP 路由挂到本服务的 web server 上
+async def init():
+    # 建表 + 把 HTTP 路由挂到本服务的 web server 上
+    await db.get().execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id     TEXT PRIMARY KEY,
+            account      TEXT NOT NULL,
+            item         TEXT NOT NULL,
+            count        INTEGER NOT NULL,
+            status       TEXT NOT NULL,
+            created_at   TIMESTAMPTZ NOT NULL,
+            delivered_at TIMESTAMPTZ
+        )''')
     assert CTX.web_server is not None
     CTX.web_server.route('/pay')(pay)
     log.notice('recharge service inited, /pay ready')

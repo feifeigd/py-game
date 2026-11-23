@@ -4,14 +4,17 @@ login 组登录服务
 客户端登录流程:
     1. 客户端 TCP 连接 login 服务，发送 login.auth {account, password}
     2. 校验账号（演示版：密码 123456 或 guest 开头免密）
-    3. 生成 token，跨组调用 game 组 world 进程登记令牌
-    4. 按账号哈希分配一个 gameN 进程，把其客户端地址返回给客户端
-    5. 客户端拿 token 去连对应的 gameN 进程完成进入游戏
+    3. 账号落 PG accounts 表（新号插入，老号只更新 login_count/last_login 两列）
+    4. 生成 token，跨组调用 game 组 world 进程登记令牌
+    5. 按账号哈希分配一个 gameN 进程，把其客户端地址返回给客户端
+    6. 客户端拿 token 去连对应的 gameN 进程完成进入游戏
 """
 import hashlib
 import uuid
+from datetime import datetime, timezone
 
 from engine import api
+from engine import db
 from engine.context import CTX
 from engine.core.handler import handler
 from engine.util import log
@@ -31,6 +34,26 @@ def _pick_game_addr(account):
     return names[idx], game_servers[names[idx]]
 
 
+async def _record_login(account):
+    """账号落库: 新号插入整行; 老号增量更新 login_count / last_login 两列"""
+    gdb = db.get()
+    now = datetime.now(timezone.utc)
+    row = await gdb.fetchrow(
+        'SELECT login_count FROM accounts WHERE account = $1', account)
+    if row is None:
+        await gdb.insert('accounts', {
+            'account': account,
+            'login_count': 1,
+            'created_at': now,
+            'last_login': now,
+        })
+    else:
+        await gdb.update_columns('accounts', 'account', account, {
+            'login_count': row['login_count'] + 1,
+            'last_login': now,
+        })
+
+
 @handler('login.auth')
 async def auth(session, data):
     account = str(data.get('account', '')).strip()
@@ -46,6 +69,8 @@ async def auth(session, data):
         return {'ok': False, 'error': 'no game server'}
     game_service, game_addr = picked
 
+    await _record_login(account)
+
     token = uuid.uuid4().hex
     # 跨组调用 game 组的全局进程登记令牌
     await api.call_cluster(GAME_CLUSTER, 'world.prepareLogin', account, token)
@@ -60,5 +85,12 @@ async def auth(session, data):
     }
 
 
-def init():
+async def init():
+    await db.get().execute('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            account     TEXT PRIMARY KEY,
+            login_count INTEGER NOT NULL DEFAULT 0,
+            created_at  TIMESTAMPTZ NOT NULL,
+            last_login  TIMESTAMPTZ NOT NULL
+        )''')
     log.notice('login service inited')

@@ -1,0 +1,42 @@
+# 开发环境数据库: game 组用 MongoDB, 其它组用 PostgreSQL
+# 用法: docker compose up -d
+services:
+  mongo:
+    image: mongo:7
+    container_name: pygame-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: "123456"
+      MONGO_INITDB_DATABASE: pygame
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping').ok" | grep 1
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres:
+    image: postgres:16
+    container_name: pygame-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: pygame
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U postgres -d pygame
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  mongo_data:
+  postgres_data:

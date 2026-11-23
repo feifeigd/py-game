@@ -57,6 +57,12 @@ async def main(name, config):
             name, web_config['addr'], web_config.get('maxConnection', 400))
         await CTX.web_server.start()
 
+    # 数据库（本组 config.json 配了 db 段才启用，驱动惰性 import）
+    db_config = config.get('db')
+    if db_config:
+        from engine import db
+        await db.init(db_config)
+
     # 向 master 报告就绪
     if name == MASTER_SERVICE:
         await handler_reg.dispatch('sys.nodeReady', name)

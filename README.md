@@ -1,7 +1,9 @@
 # py-game 游戏服务器框架
 
 Python3 asyncio + actor 模型的分布式游戏服务器框架（配套 Unity 客户端）。
-将原 Python2/gevent 方案重写为 **纯 Python3 标准库 asyncio** 实现，零第三方依赖。
+将原 Python2/gevent 方案重写为 **Python3 asyncio** 实现；引擎零第三方依赖，
+仅数据层按组引入异步驱动（game 组 MongoDB / motor，其它组 PostgreSQL / asyncpg，
+见 `requirements.txt`）。
 
 ## 总体架构
 
@@ -52,6 +54,7 @@ py-game/
     rpc/internal.py        组内 RPC
     rpc/cluster.py         组间 RPC
     api.py                 应用层统一调用接口（组内/跨组/跨组到指定服务）
+    db/                    数据层: DirtyRecord 脏字段追踪 + mongo/postgres 双驱动
     hotfix.py              热更新
     sys_handlers.py        sys.* 系统消息（启动握手/转发/热更/停服）
     start/master.py        进程组启动器（多进程）
@@ -69,6 +72,10 @@ py-game/
 ## 快速开始
 
 ```bash
+# 0. 起数据库（MongoDB + PostgreSQL）并安装 db 层驱动
+docker compose up -d
+pip install -r requirements.txt
+
 # 1. 启动四个进程组（各开一个终端）
 cd game     && python start.py
 cd login    && python start.py
@@ -85,6 +92,19 @@ python tools/hotfix.py game game1    # 只热更 game1
 # 4. 模拟充值
 curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 ```
+
+## 数据层（增量更新）
+
+- **game 组 → MongoDB**：玩家角色档（`player` 集合）。进入游戏时加载、新号建档；
+  字段经 `DirtyRecord` 追踪，每 `dataSaveInterval` 秒只把**脏字段 $set** 回库，
+  充值到账 / 下线 / 被踢时立即落库。
+- **login 组 → PostgreSQL**：`accounts` 表。老号登录只 UPDATE `login_count` /
+  `last_login` 两列。
+- **recharge 组 → PostgreSQL**：`orders` 表。回调先落单（pending），
+  发货成功后只 UPDATE `status` / `delivered_at` 两列。
+- **center 组 → PostgreSQL**：`online_stats` 表。在线人数变化才 upsert，
+  只更新 `online` / `updated_at` 两列。
+- 嵌套结构（list/dict 字段）原地修改后需 `data.mark_dirty('字段')` 手动标脏。
 
 ## 端口分配
 
@@ -122,7 +142,8 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 
 ## 已知简化（生产化 TODO）
 
-- 账号/角色数据在内存中，未接 MySQL/Redis（参考项目的 feather.db 层未移植）
+- ~~账号/角色数据在内存中~~ 已接 MongoDB/PostgreSQL（增量落库）；玩家离线期间的
+  补发状态仍在内存（订单以 recharge 组 PG 表为准，可再加离线补拉逻辑）
 - 客户端与 login/game 之间是明文 JSON，未做加密与签名校验
 - 没有网关层（参考项目的 gate），客户端直连 gameN
 - HTTP 服务不支持 HTTPS / 长连接

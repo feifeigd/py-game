@@ -11,6 +11,12 @@
     "backupCount": 30
   },
 
+  "db": {
+    "type": "mongo",
+    "url": "mongodb://root:123456@127.0.0.1:27017",
+    "name": "pygame"
+  },
+
   "services": {
     "master": {
       "port": 21001,
