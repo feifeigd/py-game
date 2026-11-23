@@ -5,7 +5,9 @@
   "log": {
     "level": "DEBUG",
     "path": "./log",
-    "isPrint": true
+    "isPrint": true,
+    "maxBytes": 52428800,
+    "backupCount": 30
   },
 
   "services": {
