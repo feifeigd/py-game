@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 通信协议: 4 字节大端长度前缀 + UTF-8 JSON
 
@@ -34,7 +33,7 @@ async def read_packet(reader):
         return None
     size = struct.unpack('>I', head)[0]
     if size <= 0 or size > MAX_PACKET_SIZE:
-        raise ProtocolError('bad packet size: %d' % size)
+        raise ProtocolError(f"bad packet size: {size}")
     try:
         body = await reader.readexactly(size)
     except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError):

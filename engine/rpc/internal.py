@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 进程组内部 RPC（intra-group）
 
@@ -16,8 +15,8 @@ class InternalNet(RpcNode):
 
     def __init__(self, name, services_config):
         service_config = services_config[name]
-        super(InternalNet, self).__init__(
-            name, '127.0.0.1:%s' % service_config['port'])
+        super().__init__(
+            name, "127.0.0.1:{}".format(service_config['port']))
         self._services_config = services_config
 
     async def start(self):
@@ -29,7 +28,7 @@ class InternalNet(RpcNode):
         for peer_name in names[my_index + 1:]:
             cfg = self._services_config[peer_name]
             targets[peer_name] = ('127.0.0.1', int(cfg['port']))
-        await super(InternalNet, self).start(targets)
+        await super().start(targets)
 
     async def on_request(self, key, args, kwargs):
         return await handler_reg.dispatch(key, *args, **kwargs)

@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 RPC 节点基类
 
@@ -19,7 +18,7 @@ from engine.net import protocol
 from engine.util import log
 
 
-class RpcNode(object):
+class RpcNode:
     #: hello 包中标识名字的字段，子类覆盖（区分 internal / cluster 连接）
     hello_field = 'name'
     #: 对端掉线后的重连间隔
@@ -76,7 +75,7 @@ class RpcNode(object):
         """请求-响应式调用"""
         link = self._links.get(peer_name)
         if link is None:
-            raise RuntimeError('%s: peer %s is offline (key %s)' % (self.name, peer_name, key))
+            raise RuntimeError(f'{self.name}: peer {peer_name} is offline (key {key})')
         self._seq += 1
         seq = self._seq
         fut = asyncio.get_event_loop().create_future()
@@ -165,7 +164,7 @@ class RpcNode(object):
             self.on_peer_disconnected(peer_name)
 
 
-class _Link(object):
+class _Link:
     """一条到对端的连接"""
 
     def __init__(self, node, reader, writer, hello_name=None):

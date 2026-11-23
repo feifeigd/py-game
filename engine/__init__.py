@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 py-game 服务端引擎
 基于 python3 asyncio + actor 模型的分布式游戏服务器框架

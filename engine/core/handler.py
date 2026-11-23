@@ -33,11 +33,12 @@ def all_keys():
     return sorted(_HANDLERS.keys())
 
 
-async def dispatch(key, *args, **kwargs):
-    """分发一条消息到注册的处理函数，返回其结果"""
-    func = _HANDLERS.get(key)
+async def dispatch(msg_key, *args, **kwargs):
+    """分发一条消息到注册的处理函数，返回其结果。
+    首参避开 'key' 命名，防止转发类消息里名为 key 的参数与之冲突。"""
+    func = _HANDLERS.get(msg_key)
     if func is None:
-        raise KeyError(f'no handler for key: {key}')
+        raise KeyError(f'no handler for key: {msg_key}')
     result = func(*args, **kwargs)
     if inspect.isawaitable(result):
         result = await result

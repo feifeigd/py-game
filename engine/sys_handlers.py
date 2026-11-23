@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 系统级消息处理器（每个服务进程启动时自动注册）
 
@@ -25,7 +24,6 @@ from engine.context import CTX
 from engine.core import handler as handler_reg
 from engine.core.handler import handler
 from engine.util import log
-
 
 # ---------------------------------------------------------------------
 # 启动握手

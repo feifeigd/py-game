@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 面向客户端的 TCP 服务器
 
@@ -19,7 +18,7 @@ from engine.util import log
 PLAYER_KEY_PREFIX = 'player.'
 
 
-class ClientSession(object):
+class ClientSession:
     _next_id = 1
 
     def __init__(self, server, reader, writer):
@@ -31,12 +30,13 @@ class ClientSession(object):
         self.player = None      # 登录后绑定的玩家 Actor
         self.account = None
         self.data = {}          # 业务自定义数据
+        
         self._closed = False
 
     @property
     def peer(self):
         addr = self.writer.get_extra_info('peername')
-        return '%s:%s' % addr if addr else '?'
+        return '{}:{}'.format(*addr) if addr else '?'
 
     async def reply(self, key, seq, data):
         await self._send({'key': key, 'seq': seq, 'data': data})
@@ -67,7 +67,7 @@ class ClientSession(object):
         self.server.on_session_closed(self)
 
 
-class TcpServer(object):
+class TcpServer:
     def __init__(self, name, addr):
         self.name = name
         host, port = addr.split(':')
@@ -90,7 +90,7 @@ class TcpServer(object):
 
     def on_session_closed(self, session):
         self.sessions.pop(session.session_id, None)
-        from engine.context import CTX
+        # from engine.context import CTX
         player = session.player
         if player is not None and not player.stopped:
             player.tell('__logout__')

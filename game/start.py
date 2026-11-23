@@ -1,4 +1,3 @@
-# coding:utf-8
 """game 进程组启动入口: python start.py"""
 import os
 import sys

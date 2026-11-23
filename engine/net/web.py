@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 轻量 HTTP 服务器（仅依赖 asyncio），用于充值回调、GM 接口等
 
@@ -16,7 +15,7 @@ import urllib.parse
 from engine.util import log
 
 
-class WebServer(object):
+class WebServer:
     def __init__(self, name, addr, max_connection=400):
         self.name = name
         host, port = addr.split(':')

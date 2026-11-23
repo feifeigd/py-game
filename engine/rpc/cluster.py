@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 进程组之间 RPC（inter-group cluster）
 
@@ -22,7 +21,7 @@ class ClusterNet(RpcNode):
     hello_field = 'cluster'
 
     def __init__(self, cluster_name, cluster_port, remote_addrs):
-        super(ClusterNet, self).__init__(cluster_name, '0.0.0.0:%s' % cluster_port)
+        super().__init__(cluster_name, f'0.0.0.0:{cluster_port}')
         self._remote_addrs = remote_addrs  # {对端组名: "host:port"}
 
     async def start(self):

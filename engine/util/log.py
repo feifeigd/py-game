@@ -1,4 +1,3 @@
-# coding:utf-8
 """日志: 按服务名区分前缀，同时输出到控制台与文件"""
 import logging
 import os
@@ -32,7 +31,7 @@ def init(service_name, config):
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
         fh = logging.FileHandler(
-            os.path.join(log_dir, '%s_%s.log' % (service_name, time.strftime('%Y%m%d'))),
+            os.path.join(log_dir, "{}_{}.log".format(service_name, time.strftime('%Y%m%d'))),
             encoding='utf-8')
         fh.setFormatter(fmt)
         _logger.addHandler(fh)
