@@ -29,7 +29,7 @@ class ClusterNet(RpcNode):
         for peer_name, addr in self._remote_addrs.items():
             host, port = addr.split(':')
             targets[peer_name] = (host, int(port))
-        await super(ClusterNet, self).start(targets)
+        await super().start(targets)
 
     async def on_request(self, key, args, kwargs):
         return await handler_reg.dispatch(key, *args, **kwargs)
