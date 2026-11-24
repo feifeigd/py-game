@@ -35,3 +35,7 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 - 各组 `start.py` 必须保留 `if __name__ == '__main__':` 守卫——Windows spawn 模式下子进程会重导入主模块
 
 <!-- /bmad:context -->
+
+## 编码约定（项目级，bmad 块外持久保存）
+
+- 字符串格式化一律用 f-string，不用 `%` 或 `str.format`（包括 log 调用——`engine/util/log.py` 的封装本来就是立即格式化，用 `%s` 占不到惰性求值的便宜）。存量代码改动到某行时顺手迁移，不做全量重写
