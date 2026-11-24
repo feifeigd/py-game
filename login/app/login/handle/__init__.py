@@ -42,6 +42,14 @@ def on_service_up(service, addrs):
     log.notice(f'game server joined: {service} {addrs}')
 
 
+@handler('login.serviceDown')
+def on_service_down(service):
+    """game 组缩容通知（经本组 master 转发）：把 gameN 移出分配池"""
+    servers = CTX.config.get('gameServers', {})
+    if servers.pop(service, None) is not None:
+        log.notice(f'game server left: {service}')
+
+
 async def _record_login(account):
     """账号落库: 新号插入整行; 老号增量更新 login_count / last_login 两列"""
     gdb = db.get()

@@ -25,3 +25,12 @@ def on_service_up(group, service, addrs):
         return
     log.notice(f'game service up: {service} {addrs}')
     CTX.internal.send('login', 'login.serviceUp', service, addrs)
+
+
+@handler('sys.serviceDown')
+def on_service_down(group, service):
+    """game 组缩容通知 -> 转发给 login 服务把节点移出分配池"""
+    if group != 'game':
+        return
+    log.notice(f'game service down: {service}')
+    CTX.internal.send('login', 'login.serviceDown', service)

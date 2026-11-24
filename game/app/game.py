@@ -241,3 +241,27 @@ async def _save_loop():
 def init():
     asyncio.ensure_future(_save_loop())
     log.notice('%s (player process) inited', CTX.service_name)
+
+
+async def drain():
+    """优雅缩容排干（sys.drain 调用）：把所有在线玩家踢下线
+
+    do_kick 链路: 落库 -> 给客户端推 sys.kick -> 关连接
+    -> session 关闭回调给 actor 投 __logout__（再兜底落库 + 通知 world）
+    所以踢完后还要等 _players 清空，确保数据全部落库。"""
+    players = list(_players.values())
+    if not players:
+        return
+    log.notice(f'{CTX.service_name} draining: kicking {len(players)} players')
+    for player in players:
+        try:
+            await player.ask('kick', 'shrink')
+        except Exception:
+            log.exception(f'kick player {player.account} failed')
+    # 等 __logout__ 处理完（session 关闭是异步的）
+    for _ in range(300):
+        if not _players:
+            break
+        await asyncio.sleep(0.1)
+    if _players:
+        log.warning(f'{CTX.service_name} drain timeout, {len(_players)} players left')

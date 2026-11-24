@@ -126,18 +126,20 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 | recharge | master | 41001 | clusterPort 41000 |
 | recharge | recharge | 41002 | HTTP 41100 |
 
-## 动态扩容
+## 动态扩容 / 缩容
 
 运行期可按模板拉起新服务进程（无需改配置、无需重启）:
 
 ```bash
 python tools/cli.py game start game3 game1   # 克隆 game1 模板，端口自动分配
+python tools/cli.py game stop game3          # 优雅缩容：踢人落库 -> 回收进程
 ```
 
 - 各类端口（组内/TCP/WS/HTTP）自动取全组同类型最大值 +1，如 game3 = 21003+1 / 21103 / 21203
 - 新节点由它反向拨号所有存量节点完成组网，存量节点无感知；master 单独给它下发 load/init/allReady
 - 扩容后 master 向其它组广播 `sys.serviceUp`（携带客户端入口地址），login 组收到后把新 gameN 纳入分配池
-- 注意：分配是账号哈希取模，扩容会改变新登录玩家的落点（已在线玩家不受影响）
+- 缩容顺序：先广播 `sys.serviceDown` 挡住新登录 -> 目标服务排干（玩家逐个收 `sys.kick` 推送、落库、下线）-> 回收进程 -> 清配置；只允许缩容动态扩容的节点
+- 注意：分配是账号哈希取模，扩缩容会改变新登录玩家的落点（已在线玩家不受影响）
 
 ## 登录链路（端到端）
 

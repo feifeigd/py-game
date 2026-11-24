@@ -43,9 +43,28 @@ def cluster_call(group, rpc_key, **kwargs):
     return asyncio.run(_call())
 
 
+def wait_handler_ready(service, key, timeout=30):
+    """轮询目标服务直到指定 handler 注册完成（即该服务 app load 完成）"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            reply = cluster_call('game', 'sys.forwardService',
+                                 is_call=True, service_name=service,
+                                 key='sys.listKeys')
+            keys = reply.get('data') or {}
+            if key in keys.get('public', []) + keys.get('internal', []):
+                return
+        except Exception:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError(f'{service} 的 {key} 就绪超时')
+
+
 def test_cluster_cannot_fake_enter():
     """内外网隔离：集群内 RPC 伪造 game.enter 必须被拒，且不留幽灵玩家"""
     print('== 0. 集群侧伪造 game.enter / login.auth 必须被拒 ==')
+    # app load 完成前 game.enter 尚未注册，启动快慢不一，先等 game1 就绪
+    wait_handler_ready('game1', 'game.enter')
     reply = cluster_call('game', 'sys.forwardService',
                          is_call=True, service_name='game1', key='game.enter',
                          session=None, data={'account': 'hacker', 'token': 'x'})

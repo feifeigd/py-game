@@ -21,6 +21,7 @@
     actors  <service>                    列出该服务的具名 actor
     hotfix  [service|all] [package]      热更新（默认 all app）
     start   <新服务名> <模板服务名>       动态扩容：按模板拉新进程（端口自动分配）
+    stop    <服务名>                     优雅缩容：踢人落库 -> 回收进程（仅限动态节点）
     help                                 显示帮助
     quit                                 退出交互模式
 
@@ -140,6 +141,10 @@ def run_command(cli, argv):
         if len(rest) < 2:
             raise ValueError('用法: start <新服务名> <模板服务名>')
         return _show(cli.call('sys.startService', name=rest[0], template=rest[1]))
+    if cmd == 'stop':
+        if not rest:
+            raise ValueError('用法: stop <服务名>（仅限动态扩容的节点）')
+        return _show(cli.call('sys.stopService', name=rest[0]))
 
     # 默认：整条当作 master 上的 key 执行
     kwargs = _parse_json(rest[0] if rest else '')

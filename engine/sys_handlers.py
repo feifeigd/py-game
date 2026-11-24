@@ -177,6 +177,12 @@ def service_up(group, service, addrs):
     log.info(f'service up: {group}.{service} {addrs}')
 
 
+@handler('sys.serviceDown')
+def service_down(group, service):
+    """其它进程组的节点下线通知（默认忽略，业务可覆盖注册同 key）"""
+    log.info(f'service down: {group}.{service}')
+
+
 @handler('sys.execCode')
 def exec_code(code):
     """远程执行 python 代码（GM 用），返回 'success'"""
@@ -273,6 +279,70 @@ async def start_service(name, template):
 
     log.notice('service %s started dynamically: %s', name, addrs)
     return {'ok': True, 'config': cfg, 'addrs': addrs}
+
+
+@handler('sys.drain')
+async def drain():
+    """优雅缩容的排干阶段（在被下线服务上执行）:
+    业务 drain 钩子（踢人/落库等，app 模块可选实现）-> 关所有监听。
+    先踢人再关监听，保证玩家能收到 sys.kick 推送。"""
+    app = CTX.service_config.get('app')
+    module = sys.modules.get(app) if app else None
+    drain_func = getattr(module, 'drain', None) if module else None
+    if drain_func:
+        result = drain_func()
+        if asyncio.iscoroutine(result):
+            await result
+    if CTX.tcp_server:
+        await CTX.tcp_server.stop()
+    if CTX.ws_server:
+        await CTX.ws_server.stop()
+    if CTX.web_server:
+        await CTX.web_server.stop()
+    log.notice('%s drained', CTX.service_name)
+    return True
+
+
+@handler('sys.stopService')
+async def stop_service(name):
+    """master 入口：优雅缩容——下线一个动态扩容的服务进程
+
+    流程: 广播 sys.serviceDown（login 等先把节点移出分配池，挡住新登录）
+          -> 目标服务 sys.drain（踢人落库、关监听）
+          -> master 回收进程 -> 清配置
+    只允许缩容动态扩容（dynamic 标记）的节点，静态配置的服务请改配置重启。
+    """
+    if CTX.service_name != MASTER_SERVICE:
+        return {'ok': False, 'error': 'only master can stop service'}
+    services = CTX.config['services']
+    cfg = services.get(name)
+    if cfg is None:
+        return {'ok': False, 'error': f'service {name} not found'}
+    if name == MASTER_SERVICE:
+        return {'ok': False, 'error': 'cannot stop master'}
+    if not cfg.get('dynamic'):
+        return {'ok': False,
+                'error': f'{name} is a static service, only dynamic ones can be stopped'}
+    if not CTX.internal.is_online(name):
+        return {'ok': False, 'error': f'{name} is offline'}
+
+    # 1. 先广播下线，阻止新登录/新请求再路由过去
+    if CTX.cluster is not None:
+        CTX.cluster.broadcast('sys.serviceDown', CTX.config['serverType'], name)
+
+    # 2. 排干：踢人落库、关监听（可能较慢，给足超时）
+    await CTX.internal.call(name, 'sys.drain', timeout=120)
+
+    # 3. 回收进程
+    from engine.start.master import terminate_service
+    terminate_service(name)
+
+    # 4. 清配置与就绪记录
+    del services[name]
+    _ready_nodes.discard(name)
+
+    log.notice('service %s stopped dynamically', name)
+    return {'ok': True, 'service': name}
 
 
 @handler('sys.stop')
