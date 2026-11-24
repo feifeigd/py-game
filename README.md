@@ -2,8 +2,8 @@
 
 Python3 asyncio + actor 模型的分布式游戏服务器框架（配套 Unity 客户端）。
 将原 Python2/gevent 方案重写为 **Python3 asyncio** 实现；引擎零第三方依赖，
-仅数据层按组引入异步驱动（game 组 MongoDB / motor，其它组 PostgreSQL / asyncpg，
-见 `requirements.txt`）。
+仅数据层按组引入异步驱动（game 组 MongoDB / motor，其它组 PostgreSQL / asyncpg）。
+依赖用 [uv](https://docs.astral.sh/uv/) 维护（`pyproject.toml` + `uv.lock`）。
 
 ## 总体架构
 
@@ -72,18 +72,19 @@ py-game/
 ## 快速开始
 
 ```bash
-# 0. 起数据库（MongoDB + PostgreSQL）并安装 db 层驱动
+# 0. 起数据库（MongoDB + PostgreSQL）并安装依赖（自动建 .venv）
 docker compose up -d
-pip install -r requirements.txt
+uv sync
 
-# 1. 启动四个进程组（各开一个终端）
-cd game     && python start.py
-cd login    && python start.py
-cd center   && python start.py
-cd recharge && python start.py
+# 1. 启动四个进程组（各开一个终端；uv run 会自动向上找到项目根）
+cd game     && uv run python start.py
+cd login    && uv run python start.py
+cd center   && uv run python start.py
+cd recharge && uv run python start.py
+# 也可以先激活虚拟环境再用裸 python: .venv\Scripts\activate
 
 # 2. 一键联调测试（自动起全部组 + 全流程验证 + 热更新演示）
-python tools/test_all.py
+uv run python tools/test_all.py
 
 # 3. 热更新（改了 game/app/ 下的代码后，不重启进程生效）
 python tools/hotfix.py game          # game 组所有服务

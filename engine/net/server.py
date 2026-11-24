@@ -55,7 +55,7 @@ class ClientSession:
         try:
             log.debug("obj=%s", obj)
             await protocol.write_packet(self.writer, obj)
-        except (ConnectionResetError, BrokenPipeError, asyncio.TimeoutError):
+        except (TimeoutError, ConnectionResetError, BrokenPipeError):
             self.close()
 
     def close(self):
@@ -64,8 +64,8 @@ class ClientSession:
         self._closed = True
         try:
             self.writer.close()
-        except Exception:
-            pass
+        except (AttributeError, OSError, RuntimeError) as exc:
+            log.warning('failed to close session %s: %s', self.peer, exc)
         self.server.on_session_closed(self)
 
 

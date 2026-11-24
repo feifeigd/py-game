@@ -15,9 +15,10 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 
 ## Running and verifying
 
-- 全流程联调: `python tools/test_all.py`（自动起 4 个进程组，验证登录/聊天/充值/热更，结束自动清理）
-- 单起一个进程组必须在其目录下运行: `cd game && python start.py`（cwd 决定 config.json 与日志路径）
-- 热更新: `python tools/hotfix.py <组名> [服务名|all]`
+- 依赖用 uv 维护（`pyproject.toml` + `uv.lock`）：先 `uv sync` 建 `.venv`；跑代码用 `uv run python ...`（子目录下会自动找到项目根）或先激活 `.venv`
+- 全流程联调: `uv run python tools/test_all.py`（自动起 4 个进程组，验证登录/聊天/充值/热更，结束自动清理）
+- 单起一个进程组必须在其目录下运行: `cd game && uv run python start.py`（cwd 决定 config.json 与日志路径）
+- 热更新: `uv run python tools/hotfix.py <组名> [服务名|all]`
 
 ## Conventions that differ from defaults
 

@@ -1,3 +1,0 @@
-# 数据库异步驱动（仅 db 层使用，引擎其余部分保持零依赖）
-motor>=3.7      # MongoDB 官方异步驱动
-asyncpg>=0.30   # PostgreSQL 异步驱动
