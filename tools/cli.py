@@ -1,4 +1,3 @@
-# coding:utf-8
 """
 集群 debug CLI
 
@@ -40,20 +39,21 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, ROOT)
 
-from engine.net import protocol  # noqa: E402
+from engine.net import protocol
 
 
 class ClusterCli:
     """与一组 master 的 clusterPort 通话的短连接客户端（每条命令一次连接）"""
 
     def __init__(self, group):
+        # group = center|game|login|recharge, 就是ROOT子文件夹的名字
         self.group = group
         config_path = os.path.join(ROOT, group, 'config.json')
         with open(config_path, 'r', encoding='utf-8') as fp:
             config = json.load(fp)
         cluster = config['services']['master']['cluster']
         self.port = cluster['clusterPort']
-        self.name = '%s.master' % group
+        self.name = f'{group}.master'
 
     async def request(self, key, args=(), kwargs=None):
         reader, writer = await asyncio.open_connection('127.0.0.1', self.port)
@@ -146,11 +146,10 @@ def _show(result):
 
 
 def repl(cli):
-    print('已连接 %s (127.0.0.1:%s)，输入 help 查看命令，quit 退出'
-          % (cli.name, cli.port))
+    print(f'已连接 {cli.name} (127.0.0.1:{cli.port})，输入 help 查看命令，quit 退出')
     while True:
         try:
-            line = input('%s> ' % cli.group)
+            line = input(f'{cli.group}> ')
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -161,7 +160,7 @@ def repl(cli):
             if not run_command(cli, shlex.split(line)):
                 break
         except Exception as exc:
-            print('error: %s' % exc)
+            print(f'error: {exc}')
 
 
 def main():
@@ -173,7 +172,7 @@ def main():
         try:
             run_command(cli, sys.argv[2:])
         except Exception as exc:
-            print('error: %s' % exc, file=sys.stderr)
+            print(f'error: {exc}', file=sys.stderr)
             sys.exit(1)
     else:
         repl(cli)
