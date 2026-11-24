@@ -118,17 +118,18 @@ def full_flow(account='tester', password='123456'):
     print('  player.getInfo ->', json.dumps(result, ensure_ascii=False))
 
     print('== 5. 充值（HTTP 回调 -> recharge 组 -> world -> 玩家 actor）==')
-    resp = http_get('http://127.0.0.1:41100/pay?account=%s&item=diamond&count=100' % account)
+    before = result['diamond']
+    resp = http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100')
     print('  /pay ->', resp)
 
     import time
     time.sleep(1)  # 等推送
     result = game.call('player.getInfo', {})
     print('  充值后 player.getInfo ->', json.dumps(result, ensure_ascii=False))
-    assert result['diamond'] == 100, result
+    assert result['diamond'] == before + 100, (before, result)
 
     pushes = [p['key'] for p in game.pushes]
-    print('== 收到的推送: %s ==' % pushes)
+    print(f'== 收到的推送: {pushes} ==')
     assert 'recharge.push' in pushes
     assert 'chat.push' in pushes
     game.close()

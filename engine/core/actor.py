@@ -20,6 +20,26 @@ from engine.util import log
 # 所有存活 actor，热更新时用于类重绑定
 _live_actors = weakref.WeakSet()
 
+# 具名 actor 注册表：actor_id -> Actor（分布式寻址用，约定 '类型:ID' 如 'player:tester'）
+_named_actors = weakref.WeakValueDictionary()
+
+
+def bind_actor(actor_id, actor):
+    """给 actor 绑定全局唯一名字，之后可跨进程经 sys.tellActor/sys.askActor 寻址"""
+    _named_actors[actor_id] = actor
+    actor._actor_id = actor_id
+
+
+def unbind_actor(actor_id, actor):
+    """解绑（仅当注册表里仍是该实例，防止顶号时新实例被旧实例误删）"""
+    if _named_actors.get(actor_id) is actor:
+        del _named_actors[actor_id]
+
+
+def find_actor(actor_id):
+    """在本进程查找具名 actor，不存在返回 None"""
+    return _named_actors.get(actor_id)
+
 
 class Actor:
     _STOP = object()
@@ -28,6 +48,12 @@ class Actor:
         self._mailbox = asyncio.Queue()
         self._task = None
         self._stopped = False
+        self._actor_id = None    # bind() 后的分布式寻址名
+
+    def bind(self, actor_id):
+        """绑定寻址名，返回 self 方便链式: Player(...).bind('player:x').start()"""
+        bind_actor(actor_id, self)
+        return self
 
     # ---------------------------------------------------------------
     def start(self):
@@ -84,6 +110,8 @@ class Actor:
                 if fut is not None and not fut.done():
                     fut.set_result(result)
         await self.on_stop()
+        if self._actor_id is not None:
+            unbind_actor(self._actor_id, self)
 
     async def on_message(self, key, *args, **kwargs):
         """按消息名分发到 do_<key> 方法，camelCase 自动转 snake_case"""

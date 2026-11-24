@@ -27,6 +27,7 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 - actor 消息方法 camelCase 自动转 snake_case: `player.getInfo` -> `do_get_info`
 - 热更新安全: `app` 包模块级状态必须写 `if 'x' not in globals():` 守卫（reload 复用模块 `__dict__`，不守卫会丢状态），参照 `game/app/world.py`
 - 只有 master 服务持有 cluster 连接；普通服务跨组调用用 `api.call_cluster`，自动经 master 转发
+- 跨进程给 actor 发消息用 `api.actor_ref('player:账号', service='game1').tell/ask`（actor 侧 `bind('player:'+account)` 注册寻址名，停止自动解绑；跨组加 `cluster=` 参数）；不要再手写 handler + 查表转发
 
 ## Known pitfalls
 

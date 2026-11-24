@@ -44,11 +44,11 @@ class WorldActor(Actor):
             return {'ok': False, 'error': 'invalid token'}
         del self.tokens[account]
 
-        # 顶号：账号已在其它进程在线，先踢掉
+        # 顶号：账号已在其它进程在线，直接寻址那边的玩家 actor 踢掉
         old_service = self.player_locations.get(account)
         if old_service and old_service != service_name:
             log.notice('account %s re-login, kick from %s', account, old_service)
-            api.send_service(old_service, 'game.kick', account)
+            api.actor_ref('player:' + account, service=old_service).tell('kick')
 
         self.player_locations[account] = service_name
         log.notice('player %s login at %s (online=%d)',
@@ -61,11 +61,17 @@ class WorldActor(Actor):
         log.notice('player %s logout (online=%d)', account, len(self.player_locations))
 
     async def do_on_recharge(self, account, item, count):
-        """recharge 组跨组打入的充值"""
+        """recharge 组跨组打入的充值：直接寻址玩家所在进程的玩家 actor"""
         service_name = self.player_locations.get(account)
         if service_name:
-            await api.call_service(service_name, 'game.addRecharge', account, item, count)
-            return {'ret': 0, 'msg': f'recharge delivered to {service_name}'}
+            try:
+                await api.actor_ref('player:' + account, service=service_name) \
+                    .ask('recharge', item, count)
+                return {'ret': 0, 'msg': f'recharge delivered to {service_name}'}
+            except Exception as exc:
+                # actor 刚好掉线等投递失败，落入离线充值兜底
+                log.warning('deliver recharge to %s at %s failed: %s',
+                            account, service_name, exc)
         # 玩家不在线，挂离线充值
         self.offline_recharges.setdefault(account, []).append((item, count))
         log.notice('offline recharge for %s: %s x%s', account, item, count)

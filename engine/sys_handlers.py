@@ -43,9 +43,12 @@ def node_ready(service_name):
 
 
 async def _broadcast_stages():
+    internal = CTX.internal
+    if internal is None:
+        raise RuntimeError('internal RPC node is not initialized')
     for stage in ('sys.load', 'sys.init', 'sys.allReady'):
         await handler_reg.dispatch(stage)                    # master 自己
-        await CTX.internal.broadcast_call(stage)             # 其它服务
+        await internal.broadcast_call(stage)                  # 其它服务
     log.notice('==== all services started ====')
 
 
@@ -100,6 +103,31 @@ async def forward_service(is_call, service_name, key, *args, **kwargs):
     if is_call:
         return await CTX.internal.call(service_name, key, *args, **kwargs)
     return CTX.internal.send(service_name, key, *args, **kwargs)
+
+
+# ---------------------------------------------------------------------
+# 分布式 actor 寻址（api.actor_ref 的落点）
+# ---------------------------------------------------------------------
+@handler('sys.tellActor')
+def tell_actor(actor_id, key, *args, **kwargs):
+    """向本进程的具名 actor 投递消息（fire-and-forget）"""
+    from engine.core.actor import find_actor
+    actor = find_actor(actor_id)
+    if actor is None:
+        log.warning('sys.tellActor: %s not found in %s', actor_id, CTX.service_name)
+        return False
+    actor.tell(key, *args, **kwargs)
+    return True
+
+
+@handler('sys.askActor')
+async def ask_actor(actor_id, key, *args, **kwargs):
+    """向本进程的具名 actor 投递消息并等待结果"""
+    from engine.core.actor import find_actor
+    actor = find_actor(actor_id)
+    if actor is None:
+        raise RuntimeError(f'actor {actor_id} not found in {CTX.service_name}')
+    return await actor.ask(key, *args, **kwargs)
 
 
 # ---------------------------------------------------------------------

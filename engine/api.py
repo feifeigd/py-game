@@ -2,7 +2,7 @@
 应用层统一调用接口
 
 组内调用（同一进程组的两个服务进程之间）:
-    await api.call_service('game1', 'game.addRecharge', account, item)
+    await api.call_service('game1', 'game.onlineCount')
     api.send_service('master', 'world.playerLogout', account)
     api.broadcast_service('sys.xxx', ...)          # 组内广播
 
@@ -77,3 +77,63 @@ async def call_cluster_service(cluster_name, service_name, key, *args, timeout=3
     """跨组调用对端组内指定服务的处理函数"""
     return await call_cluster(cluster_name, 'sys.forwardService',
                               True, service_name, key, *args, timeout=timeout, **kwargs)
+
+
+# ---------------------------------------------------------------------
+# 分布式 actor 通信（位置透明）
+# ---------------------------------------------------------------------
+class ActorRef:
+    """位置透明的 actor 引用：与本地 Actor 相同的 tell/ask 接口。
+
+    目标 actor 用 actor.bind('类型:ID') 绑定名字后，从任何进程寻址:
+        ref = api.actor_ref('player:tester', service='game1')            # 组内某进程
+        ref = api.actor_ref('player:tester', service='game1', cluster='game')  # 跨组
+        ref = api.actor_ref('world:main')                                # 本进程
+        ref.tell('kick')
+        result = await ref.ask('get_info')
+    """
+
+    def __init__(self, actor_id, service_name=None, cluster_name=None):
+        self.actor_id = actor_id
+        self.service_name = service_name
+        self.cluster_name = cluster_name
+
+    def tell(self, key, *args, **kwargs):
+        """异步投递，不等待结果"""
+        if self.cluster_name:
+            return send_cluster_service(self.cluster_name, self.service_name,
+                                        'sys.tellActor', self.actor_id, key,
+                                        *args, **kwargs)
+        if self.service_name:
+            return send_service(self.service_name, 'sys.tellActor',
+                                self.actor_id, key, *args, **kwargs)
+        actor = self._local()
+        if actor is None:
+            log.warning('ActorRef.tell: %s not found in local process', self.actor_id)
+            return False
+        actor.tell(key, *args, **kwargs)
+        return True
+
+    async def ask(self, key, *args, timeout=30, **kwargs):
+        """异步投递并等待结果"""
+        if self.cluster_name:
+            return await call_cluster_service(self.cluster_name, self.service_name,
+                                              'sys.askActor', self.actor_id, key,
+                                              *args, timeout=timeout, **kwargs)
+        if self.service_name:
+            return await call_service(self.service_name, 'sys.askActor',
+                                      self.actor_id, key, *args,
+                                      timeout=timeout, **kwargs)
+        actor = self._local()
+        if actor is None:
+            raise RuntimeError(f'actor {self.actor_id} not found in local process')
+        return await actor.ask(key, *args, **kwargs)
+
+    def _local(self):
+        from engine.core.actor import find_actor
+        return find_actor(self.actor_id)
+
+
+def actor_ref(actor_id, service=None, cluster=None):
+    """创建一个指向具名 actor 的位置透明引用（见 ActorRef docstring）"""
+    return ActorRef(actor_id, service_name=service, cluster_name=cluster)

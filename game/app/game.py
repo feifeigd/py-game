@@ -193,32 +193,14 @@ async def enter(session, data):
         doc['name'] = f'勇者_{account}'
     doc.pop('account', None)  # account 是主键，不进 DirtyRecord
 
-    player = Player(account, session, doc, is_new).start()
+    # bind 后本进程内可经 api.actor_ref 寻址，跨进程走 sys.tellActor/sys.askActor
+    player = Player(account, session, doc, is_new).bind('player:' + account).start()
     _players[account] = player
     session.player = player
     session.account = account
     log.notice('player %s enter %s (%s)', account, CTX.service_name,
                'new' if is_new else 'loaded')
     return {'ok': True, 'player': await player.ask('get_info', {})}
-
-
-@handler('game.addRecharge')
-def add_recharge(account, item, count):
-    """world 进程转发的充值"""
-    player = _players.get(account)
-    if player is None:
-        return {'ret': 1, 'msg': 'player not in this service'}
-    player.tell('recharge', item, count)
-    return {'ret': 0}
-
-
-@handler('game.kick')
-def kick(account):
-    player = _players.get(account)
-    if player is not None:
-        player.tell('kick')
-        return True
-    return False
 
 
 @handler('game.broadcastPush')
