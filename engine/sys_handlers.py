@@ -66,7 +66,10 @@ async def init():
     """调用 app.init()"""
     app = CTX.service_config.get('app')
     if app:
-        module = sys.modules[app]
+
+        module = sys.modules.get(app)
+        if not module:
+            log.error("module %s not found!", app)
         init_func = getattr(module, 'init', None)
         if init_func:
             result = init_func()

@@ -13,8 +13,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 
-from engine import api
-from engine import db
+from engine import api, db
 from engine.context import CTX
 from engine.core.handler import handler
 from engine.util import log
