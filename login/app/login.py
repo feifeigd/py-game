@@ -85,14 +85,3 @@ async def auth(session, data):
         'gameAddr': game_addrs['tcp'],      # Unity 等原生客户端走 TCP
         'gameWsAddr': game_addrs['ws'],     # Cocos / H5 / 小程序走 WebSocket
     }
-
-
-async def init():
-    await db.get().execute('''
-        CREATE TABLE IF NOT EXISTS accounts (
-            account     TEXT PRIMARY KEY,
-            login_count INTEGER NOT NULL DEFAULT 0,
-            created_at  TIMESTAMPTZ NOT NULL,
-            last_login  TIMESTAMPTZ NOT NULL
-        )''')
-    log.notice('login service inited')
