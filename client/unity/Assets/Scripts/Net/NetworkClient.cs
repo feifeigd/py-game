@@ -57,11 +57,14 @@ public class NetworkClient : MonoBehaviour
     public void Connect(string host, int port)
     {
         Close();
-        _client = new TcpClient();
-        _client.Connect(host, port);
-        _stream = _client.GetStream();
+        TcpClient client = new TcpClient();
+        client.Connect(host, port);
+        _client = client;
+        _stream = client.GetStream();
         _closed = false;
-        _readThread = new Thread(ReadLoop) { IsBackground = true };
+        // 读线程持有自己那个连接的引用，退出时只对"仍是当前连接"才上报断线，
+        // 避免旧连接的 disconnect 事件误关新连接（重连竞态）
+        _readThread = new Thread(() => ReadLoop(client)) { IsBackground = true };
         _readThread.Start();
         Debug.Log($"[Net] connected {host}:{port}");
     }
@@ -121,18 +124,19 @@ public class NetworkClient : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    private void ReadLoop()
+    private void ReadLoop(TcpClient client)
     {
+        NetworkStream stream = client.GetStream();
         byte[] head = new byte[4];
         try
         {
             while (!_closed)
             {
-                if (!ReadExact(head, 4)) break;
+                if (!ReadExact(stream, head, 4)) break;
                 int size = System.Net.IPAddress.NetworkToHostOrder(BitConverter.ToInt32(head, 0));
                 if (size <= 0 || size > 4 * 1024 * 1024) break;
                 byte[] body = new byte[size];
-                if (!ReadExact(body, size)) break;
+                if (!ReadExact(stream, body, size)) break;
                 string json = Encoding.UTF8.GetString(body);
                 Packet packet = JsonUtility.FromJson<Packet>(json);
                 _recvQueue.Enqueue(packet);
@@ -142,15 +146,18 @@ public class NetworkClient : MonoBehaviour
         {
             // 连接被关闭等
         }
-        _eventQueue.Enqueue("disconnect");
+        // 只有自己仍是当前连接时才上报断线；
+        // 否则说明 Connect/Close 已换过新连接，这个退出事件是过期的
+        if (client == _client)
+            _eventQueue.Enqueue("disconnect");
     }
 
-    private bool ReadExact(byte[] buf, int len)
+    private static bool ReadExact(NetworkStream stream, byte[] buf, int len)
     {
         int got = 0;
         while (got < len)
         {
-            int n = _stream.Read(buf, got, len - got);
+            int n = stream.Read(buf, got, len - got);
             if (n <= 0) return false;
             got += n;
         }

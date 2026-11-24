@@ -56,6 +56,7 @@ async def _record_login(account):
 
 @handler('login.auth')
 async def auth(session, data):
+    log.notice('login auth: %s', data)
     account = str(data.get('account', '')).strip()
     password = str(data.get('password', ''))
     if not account:

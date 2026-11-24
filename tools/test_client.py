@@ -41,14 +41,16 @@ class GameClient(object):
     def call(self, key, data=None, timeout=10):
         self.seq += 1
         seq = self.seq
-        self._send({'key': key, 'seq': seq, 'data': data or {}})
+        # 协议约定: data 是业务数据的 JSON 字符串（与 Unity Packet.cs 一致）
+        self._send({'key': key, 'seq': seq, 'data': json.dumps(data or {}, ensure_ascii=False)})
         with self._cond:
             if not self._cond.wait_for(lambda: seq in self._pending, timeout):
                 raise TimeoutError('call %s timeout' % key)
             reply = self._pending.pop(seq)
         if 'error' in reply:
             raise RuntimeError('%s error: %s' % (key, reply['error']))
-        return reply.get('data')
+        data = reply.get('data')
+        return json.loads(data) if isinstance(data, str) else data
 
     def _send(self, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8')

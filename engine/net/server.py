@@ -10,6 +10,7 @@
 推送:  {"key": "chat.push", "data": {...}}（无 seq）
 """
 import asyncio
+import json
 
 from engine.core import handler as handler_reg
 from engine.net import protocol
@@ -39,7 +40,7 @@ class ClientSession:
         return '{}:{}'.format(*addr) if addr else '?'
 
     async def reply(self, key, seq, data):
-        await self._send({'key': key, 'seq': seq, 'data': data})
+        await self._send({'key': key, 'seq': seq, 'data': json.dumps(data)})
 
     async def reply_error(self, key, seq, error):
         await self._send({'key': key, 'seq': seq, 'error': str(error)})
@@ -52,6 +53,7 @@ class ClientSession:
         if self._closed:
             return
         try:
+            log.debug("obj=%s", obj)
             await protocol.write_packet(self.writer, obj)
         except (ConnectionResetError, BrokenPipeError, asyncio.TimeoutError):
             self.close()
@@ -114,11 +116,12 @@ class TcpServer:
         finally:
             session.close()
 
-    async def _dispatch(self, session, packet):
+    async def _dispatch(self, session: ClientSession, packet):
         key = packet.get('key')
         seq = packet.get('seq')
-        data = packet.get('data') or {}
+        data = packet.get('data') or '{}'
         try:
+            data = json.loads(data)
             if key.startswith(PLAYER_KEY_PREFIX) and session.player is not None:
                 # 路由到玩家 actor，串行处理该玩家的消息
                 result = await session.player.ask(key[len(PLAYER_KEY_PREFIX):], data)
