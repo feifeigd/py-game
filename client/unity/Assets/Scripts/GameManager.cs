@@ -121,8 +121,11 @@ public class GameManager : MonoBehaviour
                 break;
             case "sys.kick":
                 var kick = JsonUtility.FromJson<KickPush>(json);
-                Bootstrap.I.SetStatus("被踢下线: " + kick.reason);
+                Bootstrap.I.SetStatus("被踢下线: " + (kick != null ? kick.reason : ""));
                 InGame = false;
+                break;
+            default:
+                Debug.Log($"[Push] 未处理的推送 {key}: {json}");
                 break;
         }
     }

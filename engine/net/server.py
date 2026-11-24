@@ -46,8 +46,8 @@ class ClientSession:
         await self._send({'key': key, 'seq': seq, 'error': str(error)})
 
     async def push(self, key, data):
-        """服务器主动推送"""
-        await self._send({'key': key, 'data': data})
+        """服务器主动推送（与回包一致: data 为业务 JSON 字符串）"""
+        await self._send({'key': key, 'data': json.dumps(data)})
 
     async def _send(self, obj):
         if self._closed:

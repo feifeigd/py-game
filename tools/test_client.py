@@ -77,9 +77,15 @@ class GameClient(object):
                         self._pending[packet['seq']] = packet
                         self._cond.notify_all()
                 else:
+                    data = packet.get('data')
+                    if isinstance(data, str):
+                        try:
+                            data = json.loads(data)
+                        except ValueError:
+                            pass
                     self.pushes.append(packet)
                     print('  [push] %s %s' % (packet.get('key'),
-                                                json.dumps(packet.get('data'), ensure_ascii=False)))
+                                                json.dumps(data, ensure_ascii=False)))
 
 
 def http_get(url):
