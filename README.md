@@ -2,7 +2,8 @@
 
 Python3 asyncio + actor 模型的分布式游戏服务器框架（配套 Unity 客户端）。
 将原 Python2/gevent 方案重写为 **Python3 asyncio** 实现；引擎零第三方依赖，
-仅数据层按组引入异步驱动（game 组 MongoDB / motor，其它组 PostgreSQL / asyncpg）。
+仅数据层按组引入异步驱动（game 组 MongoDB / motor，login、recharge 组 PostgreSQL / asyncpg，
+center 组 MySQL / aiomysql）。
 依赖用 [uv](https://docs.astral.sh/uv/) 维护（`pyproject.toml` + `uv.lock`）。
 
 ## 总体架构
@@ -54,7 +55,7 @@ py-game/
     rpc/internal.py        组内 RPC
     rpc/cluster.py         组间 RPC
     api.py                 应用层统一调用接口（组内/跨组/跨组到指定服务）
-    db/                    数据层: DirtyRecord 脏字段追踪 + mongo/postgres 双驱动
+    db/                    数据层: DirtyRecord 脏字段追踪 + mongo/postgres/mysql 三驱动
     hotfix.py              热更新
     sys_handlers.py        sys.* 系统消息（启动握手/转发/热更/停服）
     start/master.py        进程组启动器（多进程）
@@ -73,7 +74,7 @@ py-game/
 ## 快速开始
 
 ```bash
-# 0. 起数据库（MongoDB + PostgreSQL）并安装依赖（自动建 .venv）
+# 0. 起数据库（MongoDB + PostgreSQL + MySQL）并安装依赖（自动建 .venv）
 docker compose up -d
 uv sync
 
@@ -104,8 +105,11 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
   `last_login` 两列。
 - **recharge 组 → PostgreSQL**：`orders` 表。回调先落单（pending），
   发货成功后只 UPDATE `status` / `delivered_at` 两列。
-- **center 组 → PostgreSQL**：`online_stats` 表。在线人数变化才 upsert，
+- **center 组 → MySQL**：`online_stats` 表。在线人数变化才 upsert，
   只更新 `online` / `updated_at` 两列。
+- 三种关系/文档库的驱动接口一致（`execute/fetchrow/fetch/insert/update_columns/upsert`），
+  业务组切换库只需改 config.json 的 `db` 段；注意 DDL 用可移植写法
+  （`VARCHAR(n) PRIMARY KEY`、`TIMESTAMP`），aiomysql 是 %s 占位、反引号标识符。
 - 嵌套结构（list/dict 字段）原地修改后需 `data.mark_dirty('字段')` 手动标脏。
 
 ## 端口分配
@@ -144,7 +148,7 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 
 ## 已知简化（生产化 TODO）
 
-- ~~账号/角色数据在内存中~~ 已接 MongoDB/PostgreSQL（增量落库）；玩家离线期间的
+- ~~账号/角色数据在内存中~~ 已接 MongoDB/PostgreSQL/MySQL（增量落库）；玩家离线期间的
   补发状态仍在内存（订单以 recharge 组 PG 表为准，可再加离线补拉逻辑）
 - 客户端与 login/game 之间是明文 JSON，未做加密与签名校验
 - 没有网关层（参考项目的 gate），客户端直连 gameN

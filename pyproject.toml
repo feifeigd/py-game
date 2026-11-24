@@ -3,6 +3,7 @@ name = "py-game"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "aiomysql>=0.2",
     "asyncpg>=0.30",
     "motor>=3.7",
 ]

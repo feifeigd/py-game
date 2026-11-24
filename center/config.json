@@ -11,8 +11,8 @@
   },
 
   "db": {
-    "type": "postgres",
-    "dsn": "postgresql://postgres:123456@127.0.0.1:5432/pygame"
+    "type": "mysql",
+    "dsn": "mysql://root:123456@127.0.0.1:3306/pygame"
   },
 
   "services": {

@@ -4,6 +4,7 @@
 
     "db": {"type": "mongo",    "url": "mongodb://root:123456@127.0.0.1:27017", "name": "pygame"}
     "db": {"type": "postgres", "dsn": "postgresql://postgres:123456@127.0.0.1:5432/pygame"}
+    "db": {"type": "mysql",    "dsn": "mysql://root:123456@127.0.0.1:3306/pygame"}
 
 业务用法:
     from engine import db
@@ -29,8 +30,11 @@ async def init(db_config, retries=30, retry_interval=2):
     elif db_type == 'postgres':
         from engine.db.postgres import PostgresDB
         _db = PostgresDB(db_config['dsn'])
+    elif db_type == 'mysql':
+        from engine.db.mysql import MySQLDB
+        _db = MySQLDB(db_config['dsn'])
     else:
-        raise ValueError('unknown db type: %r' % db_type)
+        raise ValueError(f'unknown db type: {db_type!r}')
 
     last_exc = None
     for i in range(retries):

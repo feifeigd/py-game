@@ -52,11 +52,12 @@ def get_online_stats():
 
 
 async def init():
+    # DDL 用可移植写法（PG / MySQL 通用），切换 db.type 不用改业务代码
     await db.get().execute('''
         CREATE TABLE IF NOT EXISTS online_stats (
-            group_name TEXT PRIMARY KEY,
+            group_name VARCHAR(64) PRIMARY KEY,
             online     INTEGER NOT NULL DEFAULT 0,
-            updated_at TIMESTAMPTZ NOT NULL
+            updated_at TIMESTAMP NOT NULL
         )''')
     center_actor.start()
     log.notice('center inited')

@@ -140,10 +140,62 @@ async def test_postgres_incremental():
     print('PostgreSQL 增量更新 ok')
 
 
+# ---------------------------------------------------------------------
+async def test_mysql_incremental():
+    from engine.db.mysql import MySQLDB
+    from engine.db.mysql import _ident as mysql_ident
+    my = MySQLDB.__new__(MySQLDB)
+    captured = []
+
+    async def fake_execute(sql, *args):
+        captured.append((sql, args))
+        return 1
+
+    my.execute = fake_execute
+
+    # 1) 增量 UPDATE 只带脏列（反引号 + %s 占位）
+    n = await my.update_columns('accounts', 'account', 'a1',
+                                {'login_count': 3, 'last_login': 'NOW'})
+    assert n == 2
+    sql, args = captured[-1]
+    assert sql == ('UPDATE `accounts` SET `login_count` = %s, `last_login` = %s'
+                   ' WHERE `account` = %s'), sql
+    assert args == (3, 'NOW', 'a1')
+
+    # 2) 空脏不执行
+    n = await my.update_columns('accounts', 'account', 'a1', {})
+    assert n == 0 and len(captured) == 1
+
+    # 3) insert 参数化
+    await my.insert('orders', {'order_id': 'o1', 'count': 100})
+    sql, args = captured[-1]
+    assert sql == 'INSERT INTO `orders` (`order_id`, `count`) VALUES (%s, %s)'
+    assert args == ('o1', 100)
+
+    # 4) upsert 冲突时只更新脏列
+    await my.upsert('online_stats', 'group_name', 'game',
+                    {'online': 7, 'updated_at': 'T'}, extra=None)
+    sql, args = captured[-1]
+    assert 'ON DUPLICATE KEY UPDATE' in sql, sql
+    assert '`online` = _new.`online`' in sql
+    assert '`updated_at` = _new.`updated_at`' in sql
+    assert 'group_name` = _new' not in sql  # 主键不参与更新
+
+    # 5) 标识符注入防护
+    for bad in ('a; DROP TABLE t', 'a`b', '1col', ''):
+        try:
+            mysql_ident(bad)
+            raise AssertionError(f'should reject {bad!r}')
+        except ValueError:
+            pass
+    print('MySQL 增量更新 ok')
+
+
 def main():
     test_dirty_record()
     asyncio.run(test_mongo_incremental())
     asyncio.run(test_postgres_incremental())
+    asyncio.run(test_mysql_incremental())
     print('ALL OK')
 
 

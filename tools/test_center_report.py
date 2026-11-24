@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""验证 center 在线统计落库: 起 game + center 两组, 等一个上报周期(30s), 杀进程查 PG"""
+"""验证 center 在线统计落库: 起 game + center 两组, 等一个上报周期(30s), 杀进程查 MySQL"""
 import os
 import subprocess
 import sys
@@ -32,15 +31,19 @@ def main():
         for proc in procs:
             kill_tree(proc.pid)
 
-    # 查 PG
+    # 查 MySQL
     import asyncio
-    import asyncpg
+
+    import aiomysql
 
     async def check():
-        conn = await asyncpg.connect(
-            'postgresql://postgres:123456@127.0.0.1:5432/pygame')
-        rows = await conn.fetch('SELECT * FROM online_stats')
-        await conn.close()
+        conn = await aiomysql.connect(
+            host='127.0.0.1', port=3306, user='root',
+            password='123456', db='pygame')
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute('SELECT * FROM online_stats')
+            rows = await cur.fetchall()
+        conn.close()
         return [dict(r) for r in rows]
 
     rows = asyncio.run(check())
