@@ -96,3 +96,9 @@ public class KickPush
 {
     public string reason;
 }
+
+[Serializable]
+public class LevelUpPush
+{
+    public int level;
+}

@@ -25,8 +25,31 @@ public class GameManager : MonoBehaviour
         I = this;
     }
 
+    // 推送处理表: key -> 处理方法。新增推送只需在这里登记一行
+    private System.Collections.Generic.Dictionary<string, System.Action<string>> _pushHandlers;
+
     private void Start()
     {
+        _pushHandlers = new System.Collections.Generic.Dictionary<string, System.Action<string>>
+        {
+            { "chat.push", Push<ChatPush>(p =>
+                Bootstrap.I.AddChatLine($"{p.account}: {p.text}")) },
+            { "recharge.push", Push<RechargePush>(p =>
+            {
+                Bootstrap.I.AddChatLine($"[充值到账] {p.item} x{p.count}，当前钻石 {p.diamond}");
+                RefreshInfo();
+            }) },
+            { "player.levelUp", Push<LevelUpPush>(p =>
+            {
+                Bootstrap.I.AddChatLine($"[升级] 升到 Lv.{p.level}");
+                RefreshInfo();
+            }) },
+            { "sys.kick", Push<KickPush>(p =>
+            {
+                Bootstrap.I.SetStatus("被踢下线: " + p.reason);
+                InGame = false;
+            }) },
+        };
         NetworkClient.I.OnPush += HandlePush;
         NetworkClient.I.OnDisconnected += HandleDisconnect;
     }
@@ -102,32 +125,33 @@ public class GameManager : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
+    /// <summary>把强类型处理方法包装成推送处理器：统一负责 JSON 解析与容错</summary>
+    private static System.Action<string> Push<T>(System.Action<T> handler) where T : class
+    {
+        return json =>
+        {
+            T data;
+            try
+            {
+                data = JsonUtility.FromJson<T>(json);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[Push] {typeof(T).Name} 解析失败: {e.Message} json={json}");
+                return;
+            }
+            if (data == null) return;
+            handler(data);
+        };
+    }
+
     private void HandlePush(string key, string json)
     {
-        switch (key)
-        {
-            case "chat.push":
-                var chat = JsonUtility.FromJson<ChatPush>(json);
-                Bootstrap.I.AddChatLine($"{chat.account}: {chat.text}");
-                break;
-            case "recharge.push":
-                var rc = JsonUtility.FromJson<RechargePush>(json);
-                Bootstrap.I.AddChatLine($"[充值到账] {rc.item} x{rc.count}，当前钻石 {rc.diamond}");
-                RefreshInfo();
-                break;
-            case "player.levelUp":
-                Bootstrap.I.AddChatLine("[升级] " + json);
-                RefreshInfo();
-                break;
-            case "sys.kick":
-                var kick = JsonUtility.FromJson<KickPush>(json);
-                Bootstrap.I.SetStatus("被踢下线: " + (kick != null ? kick.reason : ""));
-                InGame = false;
-                break;
-            default:
-                Debug.Log($"[Push] 未处理的推送 {key}: {json}");
-                break;
-        }
+        System.Action<string> handler;
+        if (_pushHandlers.TryGetValue(key, out handler))
+            handler(json);
+        else
+            Debug.Log($"[Push] 未处理的推送 {key}: {json}");
     }
 
     private void HandleDisconnect()
