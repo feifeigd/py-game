@@ -14,6 +14,9 @@
     sys.hotfix / sys.doHotfix   代码热更新
     sys.execCode                远程执行代码（GM）
     sys.stop                    优雅停服
+
+debug（tools/cli.py）:
+    sys.listKeys / sys.listActors   列出本进程的 handler / 具名 actor
 """
 import asyncio
 import sys
@@ -165,6 +168,27 @@ def exec_code(code):
     """远程执行 python 代码（GM 用），返回 'success'"""
     exec(code, globals())
     return 'success'
+
+
+# ---------------------------------------------------------------------
+# debug（tools/cli.py 用）
+# ---------------------------------------------------------------------
+@handler('sys.listKeys')
+def list_keys():
+    """列出本进程注册的所有 handler，按 public / internal 分组"""
+    keys = handler_reg.all_keys()
+    return {
+        'service': CTX.service_name,
+        'public': sorted(k for k in keys if handler_reg.is_public(k)),
+        'internal': sorted(k for k in keys if not handler_reg.is_public(k)),
+    }
+
+
+@handler('sys.listActors')
+def list_actors():
+    """列出本进程内所有具名 actor 的 id"""
+    from engine.core.actor import _named_actors
+    return sorted(_named_actors.keys())
 
 
 @handler('sys.stop')

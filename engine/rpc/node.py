@@ -112,13 +112,21 @@ class RpcNode:
     async def on_raw_connection(self, link, first_packet):
         """
         非节点连接（未先发 hello 包的连接，如热更新 / GM 管理工具）。
-        请求格式 {"key": k, "args": {...}}，回复 {"key": k, "data": r} 后关闭。
+        请求格式 {"key": k, "args": {...}}（kwargs）或
+                 {"key": k, "args": [...], "kwargs": {...}}（位置参数），
+        回复 {"key": k, "data": r} 后关闭。
         """
         packet = first_packet
         while packet is not None:
             key = packet.get('key')
+            args = packet.get('args') or {}
+            if isinstance(args, list):
+                # 位置参数形式: {"key": k, "args": [...], "kwargs": {...}}
+                pos, kw = args, packet.get('kwargs') or {}
+            else:
+                pos, kw = [], args
             try:
-                result = await self.on_request(key, [], packet.get('args') or {})
+                result = await self.on_request(key, pos, kw)
                 await protocol.write_packet(link.writer, {'key': key, 'data': result})
             except Exception as exc:
                 log.exception('raw request %s error', key)
