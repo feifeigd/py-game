@@ -109,6 +109,25 @@ def full_flow(account='tester', password='123456'):
     print('  game.enter ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
 
+    print('== 2.1 内外网隔离：内部 key 必须被接入层拒绝 ==')
+    for bad_key in ('world.verifyToken', 'sys.hotfix', 'sys.execCode'):
+        try:
+            game.call(bad_key, {})
+            raise AssertionError('%s 不应允许客户端调用' % bad_key)
+        except RuntimeError as exc:
+            assert 'not allowed' in str(exc), exc
+            print('  %s -> 已拒绝: %s' % (bad_key, exc))
+    # 未登录会话同样不得调用内部 key（login 连接已关闭，重连一个裸会话验证）
+    raw = GameClient().connect(game_addr)
+    for bad_key in ('world.verifyToken', 'player.chat'):
+        try:
+            raw.call(bad_key, {})
+            raise AssertionError('未登录会话不应允许调用 %s' % bad_key)
+        except RuntimeError as exc:
+            assert 'not allowed' in str(exc), exc
+            print('  未登录 %s -> 已拒绝' % bad_key)
+    raw.close()
+
     print('== 3. 聊天（走玩家 actor -> world 全服跑马灯）==')
     result = game.call('player.chat', {'text': '大家好，我是 %s' % account})
     print('  player.chat ->', result)

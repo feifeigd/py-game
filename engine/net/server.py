@@ -3,7 +3,8 @@
 
 每个客户端连接对应一个 ClientSession。消息分发规则:
   - key 以 "player." 开头且会话已登录 -> 路由到该会话绑定的玩家 Actor
-  - 其它 key -> 查 handler 注册表，处理函数签名为 func(session, data)
+  - 其它 key -> 查 handler 注册表，处理函数签名为 func(session, data)，
+    且必须 @handler(..., public=True) 显式放行（内外网隔离）
 
 请求:  {"key": "game.enter", "seq": 1, "data": {...}}
 响应:  {"key": "game.enter", "seq": 1, "data": {...}} 或带 "error" 字段
@@ -13,6 +14,7 @@ import asyncio
 import json
 
 from engine.core import handler as handler_reg
+from engine.core.actor import Actor
 from engine.net import protocol
 from engine.util import log
 
@@ -21,6 +23,7 @@ PLAYER_KEY_PREFIX = 'player.'
 
 class ClientSession:
     _next_id = 1
+    player: Actor | None  # 登录后绑定的玩家 Actor（业务子类，引擎只依赖基类）
 
     def __init__(self, server, reader, writer):
         self.server = server
@@ -28,8 +31,8 @@ class ClientSession:
         self.writer = writer
         self.session_id = ClientSession._next_id
         ClientSession._next_id += 1
-        self.player = None      # 登录后绑定的玩家 Actor
-        self.account = None
+        self.player = None      # 类注解不产生属性，必须显式初始化
+        self.account = ''
         self.data = {}          # 业务自定义数据
         # 发包实现：TCP 会话用 protocol.write_packet，WS 会话由 WsServer 覆盖
         self.write_packet_fn = protocol.write_packet
@@ -132,6 +135,9 @@ class TcpServer:
                 # 路由到玩家 actor，串行处理该玩家的消息
                 result = await session.player.ask(key[len(PLAYER_KEY_PREFIX):], data)
             else:
+                # 内外网隔离：公网只放行 public=True 的 key
+                if not handler_reg.is_public(key):
+                    raise PermissionError('key not allowed from client: %s' % key)
                 result = await handler_reg.dispatch(key, session, data)
         except Exception as exc:
             log.exception('handle client key %s error', key)

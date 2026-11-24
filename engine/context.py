@@ -1,9 +1,13 @@
 """当前服务进程上下文（每个进程一个单例）"""
 
-from engine.net.server import TcpServer, WsServer
-from engine.net.web import WebServer
-from engine.rpc.cluster import ClusterNet
-from engine.rpc.internal import InternalNet
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from engine.net.server import TcpServer, WsServer
+    from engine.net.web import WebServer
+    from engine.rpc.cluster import ClusterNet
+    from engine.rpc.internal import InternalNet
 
 
 class Context:

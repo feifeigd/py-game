@@ -47,7 +47,7 @@ center 组 MySQL / aiomysql）。
 py-game/
   engine/                  引擎（与业务无关，可直接复用）
     core/actor.py          actor 模型（tell/ask/邮箱/类热重绑定）
-    core/handler.py        @handler('key') 消息注册表
+    core/handler.py        @handler('key') 消息注册表（public=True 才允许客户端直连，内外网隔离）
     net/protocol.py        4字节长度前缀 + JSON 协议
     net/server.py          客户端 TCP 服务器（ClientSession / player.* 路由）
     net/web.py             轻量 HTTP 服务器（充值回调）

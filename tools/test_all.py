@@ -23,6 +23,52 @@ GROUPS = ['center', 'recharge', 'game', 'login']
 WAIT_PORTS = [11100, 21101, 21102, 41100]
 
 
+def cluster_call(group, rpc_key, **kwargs):
+    """直连目标组 master 的 clusterPort 发一条原始 RPC（仿 tools/hotfix.py）"""
+    import asyncio
+
+    from engine.net import protocol
+    config_path = os.path.join(ROOT, group, 'config.json')
+    with open(config_path, 'r', encoding='utf-8') as fp:
+        config = json.load(fp)
+    port = config['services']['master']['cluster']['clusterPort']
+
+    async def _call():
+        reader, writer = await asyncio.open_connection('127.0.0.1', port)
+        await protocol.write_packet(writer, {'key': rpc_key, 'args': kwargs})
+        reply = await protocol.read_packet(reader)
+        writer.close()
+        return reply
+
+    return asyncio.run(_call())
+
+
+def test_cluster_cannot_fake_enter():
+    """内外网隔离：集群内 RPC 伪造 game.enter 必须被拒，且不留幽灵玩家"""
+    print('== 0. 集群侧伪造 game.enter / login.auth 必须被拒 ==')
+    reply = cluster_call('game', 'sys.forwardService',
+                         is_call=True, service_name='game1', key='game.enter',
+                         session=None, data={'account': 'hacker', 'token': 'x'})
+    result = reply.get('data') or {}
+    assert not result.get('ok'), reply
+    assert result.get('error') == 'invalid session', reply
+    print('  cluster game.enter(session=None) -> 已拒绝:', result)
+
+    # 拒绝发生在任何副作用之前：game1 不应多出在线玩家
+    reply = cluster_call('game', 'sys.forwardService',
+                         is_call=True, service_name='game1', key='game.onlineCount')
+    assert reply.get('data') == 0, reply
+    print('  game.onlineCount -> 0（无幽灵玩家）')
+
+    reply = cluster_call('login', 'sys.forwardService',
+                         is_call=True, service_name='login', key='login.auth',
+                         session=None, data={'account': 'hacker', 'password': '123456'})
+    result = reply.get('data') or {}
+    assert not result.get('ok'), reply
+    assert result.get('error') == 'invalid session', reply
+    print('  cluster login.auth(session=None) -> 已拒绝:', result)
+
+
 def wait_port(port, timeout=60):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -56,6 +102,7 @@ def main():
         # 等待组内/组间组网与 app load 完成
         time.sleep(5)
 
+        test_cluster_cannot_fake_enter()
         full_flow('tester', '123456')
 
         print('== 6. 热更新演示: 对 game 组所有服务 reload app 包 ==')

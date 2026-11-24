@@ -18,11 +18,11 @@ game 组单人进程（game1 / game2，玩家进程）
 """
 import asyncio
 
-from engine import api
-from engine import db
+from engine import api, db
 from engine.context import CTX
 from engine.core.actor import Actor
 from engine.core.handler import handler
+from engine.net.server import ClientSession
 from engine.util import log
 
 COLL_PLAYER = 'player'  # mongo 集合名
@@ -167,9 +167,14 @@ def logout(account, player):
 # ---------------------------------------------------------------------
 # handler 入口
 # ---------------------------------------------------------------------
-@handler('game.enter')
-async def enter(session, data):
+@handler('game.enter', public=True)
+async def enter(session: ClientSession, data):
     """客户端进入游戏：验证令牌 -> 加载角色档 -> 创建玩家 actor"""
+    # 只认真实客户端连接：集群内 RPC 的参数走 JSON，伪造不出 ClientSession，
+    # 不拦的话会在 session.player 赋值处炸掉，还留下绑定过的幽灵玩家 actor
+    if not isinstance(session, ClientSession):
+        log.warning('game.enter rejected: not a client session (%r)', session)
+        return {'ok': False, 'error': 'invalid session'}
     account = str(data.get('account', ''))
     token = str(data.get('token', ''))
     if not account or not token:

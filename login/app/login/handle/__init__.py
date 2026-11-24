@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from engine import api, db
 from engine.context import CTX
 from engine.core.handler import handler
+from engine.net.server import ClientSession
 from engine.util import log
 
 GAME_CLUSTER = 'game'  # game 进程组的组间名
@@ -53,9 +54,14 @@ async def _record_login(account):
         })
 
 
-@handler('login.auth')
+@handler('login.auth', public=True)
 async def auth(session, data):
     log.notice('login auth: %s', data)
+    # 同 game.enter：只认真实客户端连接，防止集群内 RPC 伪造调用
+    # （否则会空跑落库和令牌登记，最后才在 session.account 处炸掉）
+    if not isinstance(session, ClientSession):
+        log.warning('login.auth rejected: not a client session (%r)', session)
+        return {'ok': False, 'error': 'invalid session'}
     account = str(data.get('account', '')).strip()
     password = str(data.get('password', ''))
     if not account:
