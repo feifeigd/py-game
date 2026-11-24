@@ -13,6 +13,7 @@
 import asyncio
 import json
 
+from engine.context import CTX
 from engine.core import handler as handler_reg
 from engine.core.actor import Actor
 from engine.net import protocol
@@ -131,6 +132,9 @@ class TcpServer:
         data = packet.get('data') or '{}'
         try:
             data = json.loads(data)
+            if CTX.draining:
+                # 优雅缩容排干中：拒收一切客户端消息（含直连进来的 game.enter）
+                raise PermissionError('server is draining: %s' % CTX.service_name)
             if key.startswith(PLAYER_KEY_PREFIX) and session.player is not None:
                 # 路由到玩家 actor，串行处理该玩家的消息
                 result = await session.player.ask(key[len(PLAYER_KEY_PREFIX):], data)

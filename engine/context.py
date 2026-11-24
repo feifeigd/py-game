@@ -23,6 +23,7 @@ class Context:
         self.all_ready_handler = None # 全部服务就绪回调
         self.stop_handler = None      # 停止回调
         self.is_stopping = False
+        self.draining = False         # 优雅缩容排干中（sys.drain 置位，接入层拒收客户端消息）
 
 # 单例
 CTX = Context()

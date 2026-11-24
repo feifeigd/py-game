@@ -284,8 +284,9 @@ async def start_service(name, template):
 @handler('sys.drain')
 async def drain():
     """优雅缩容的排干阶段（在被下线服务上执行）:
-    业务 drain 钩子（踢人/落库等，app 模块可选实现）-> 关所有监听。
-    先踢人再关监听，保证玩家能收到 sys.kick 推送。"""
+    置 draining（接入层开始拒收客户端消息）-> 业务 drain 钩子（踢人/落库等，
+    app 模块可选实现）-> 关所有监听。先踢人再关监听，保证玩家能收到 sys.kick 推送。"""
+    CTX.draining = True
     app = CTX.service_config.get('app')
     module = sys.modules.get(app) if app else None
     drain_func = getattr(module, 'drain', None) if module else None
