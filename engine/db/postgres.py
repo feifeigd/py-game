@@ -12,8 +12,8 @@ _IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 def _ident(name):
     if not _IDENT.match(name):
-        raise ValueError('illegal identifier: %r' % name)
-    return '"%s"' % name
+        raise ValueError(f'illegal identifier: {name!r}')
+    return f'"{name}"'
 
 
 class PostgresDB:
