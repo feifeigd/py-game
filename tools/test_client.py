@@ -122,14 +122,14 @@ def full_flow(account='tester', password='123456'):
     for bad_key in ('world.verifyToken', 'player.chat'):
         try:
             raw.call(bad_key, {})
-            raise AssertionError('未登录会话不应允许调用 %s' % bad_key)
+            raise AssertionError(f'未登录会话不应允许调用 {bad_key}')
         except RuntimeError as exc:
             assert 'not allowed' in str(exc), exc
-            print('  未登录 %s -> 已拒绝' % bad_key)
+            print(f'  未登录 {bad_key} -> 已拒绝')
     raw.close()
 
     print('== 3. 聊天（走玩家 actor -> world 全服跑马灯）==')
-    result = game.call('player.chat', {'text': '大家好，我是 %s' % account})
+    result = game.call('player.chat', {'text': f'大家好，我是 {account}'})
     print('  player.chat ->', result)
 
     print('== 4. 查询角色信息 ==')
