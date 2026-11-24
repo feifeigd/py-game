@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "description": "py-game Cocos Creator client",
   "creator": {
-    "version": "3.8.0"
+    "version": "3.8.8"
   }
 }
