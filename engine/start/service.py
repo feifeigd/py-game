@@ -49,6 +49,13 @@ async def main(name, config):
         CTX.tcp_server = TcpServer(name, tcp_config['addr'])
         await CTX.tcp_server.start()
 
+    # 面向客户端的 WebSocket 监听（Cocos / H5 / 小程序）
+    ws_config = CTX.service_config.get('wsServer')
+    if ws_config:
+        from engine.net.server import WsServer
+        CTX.ws_server = WsServer(name, ws_config['addr'])
+        await CTX.ws_server.start()
+
     # HTTP 监听（充值回调 / GM）
     web_config = CTX.service_config.get('webServer')
     if web_config:

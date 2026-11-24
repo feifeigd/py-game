@@ -1,0 +1,7 @@
+# Cocos Creator 生成物
+library/
+temp/
+local/
+build/
+profiles/
+native/

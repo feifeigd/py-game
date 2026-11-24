@@ -16,16 +16,6 @@ recharge/log/
 # 工具
 .agents/
 
-# Unity
-client/unity/Library/
-client/unity/Temp/
-client/unity/Logs/
-client/unity/obj/
-client/unity/UserSettings/
-client/unity/Assembly-CSharp.csproj
-client/unity/*.sln
-client/unity/.vs/
-
 # OS
 Thumbs.db
 Desktop.ini

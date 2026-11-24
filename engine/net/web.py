@@ -114,6 +114,7 @@ class WebServer:
             body = str(data).encode('utf-8')
             content_type = 'text/plain; charset=utf-8'
         head = ('HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n'
+                'Access-Control-Allow-Origin: *\r\n'
                 'Connection: close\r\n\r\n' % (status, reason, content_type, len(body)))
         writer.write(head.encode('latin-1') + body)
         await writer.drain()

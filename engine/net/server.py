@@ -31,7 +31,9 @@ class ClientSession:
         self.player = None      # 登录后绑定的玩家 Actor
         self.account = None
         self.data = {}          # 业务自定义数据
-        
+        # 发包实现：TCP 会话用 protocol.write_packet，WS 会话由 WsServer 覆盖
+        self.write_packet_fn = protocol.write_packet
+
         self._closed = False
 
     @property
@@ -54,7 +56,7 @@ class ClientSession:
             return
         try:
             log.debug("obj=%s", obj)
-            await protocol.write_packet(self.writer, obj)
+            await self.write_packet_fn(self.writer, obj)
         except (TimeoutError, ConnectionResetError, BrokenPipeError):
             self.close()
 
@@ -101,11 +103,15 @@ class TcpServer:
     # ---------------------------------------------------------------
     async def _on_client(self, reader, writer):
         session = ClientSession(self, reader, writer)
+        await self._serve(session, protocol.read_packet)
+
+    async def _serve(self, session, read_packet_fn):
+        """会话主循环：读包 -> 并发分发。read_packet_fn 由子类替换（TCP/WS）"""
         self.sessions[session.session_id] = session
         log.info('new session: %s', session.peer)
         try:
             while True:
-                packet = await protocol.read_packet(reader)
+                packet = await read_packet_fn(session.reader)
                 if packet is None:
                     break
                 asyncio.ensure_future(self._dispatch(session, packet))
@@ -134,3 +140,24 @@ class TcpServer:
             return
         if seq is not None:
             await session.reply(key, seq, result)
+
+
+class WsServer(TcpServer):
+    """WebSocket 接入（Cocos / H5 / 小程序客户端），包格式与 TCP 完全一致"""
+
+    async def start(self):
+        self._server = await asyncio.start_server(
+            self._on_client, self.host, self.port)
+        log.notice('ws server %s listening on %s:%s', self.name, self.host, self.port)
+
+    async def _on_client(self, reader, writer):
+        from engine.net import websocket
+        if not await websocket.handshake(reader, writer):
+            try:
+                writer.close()
+            except Exception:
+                pass
+            return
+        session = ClientSession(self, reader, writer)
+        session.write_packet_fn = websocket.write_packet
+        await self._serve(session, websocket.read_packet)

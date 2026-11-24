@@ -10,7 +10,8 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 
 - 引擎（与业务无关）: `engine/` —— actor、组内/组间 RPC、热更新、多进程启动
 - 业务进程组: `login/` `game/` `center/` `recharge/`，各自 `config.json` + `start.py` + `app/`
-- Unity 客户端: `client/unity/`，入口 `Assets/Scripts/Bootstrap.cs`
+- Unity 客户端: `client/unity/`，入口 `Assets/Scripts/Bootstrap.cs`（TCP）
+- Cocos 客户端: `client/cocos/`，入口 `assets/scripts/Bootstrap.ts`（WebSocket，服务端 `wsServer` 见 `engine/net/websocket.py`）
 - 联调与热更工具: `tools/`
 
 ## Running and verifying

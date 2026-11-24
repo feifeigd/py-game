@@ -24,7 +24,7 @@ GAME_CLUSTER = 'game'  # game 进程组的组间名
 
 def _pick_game_addr(account):
     """按账号哈希把玩家分配到某个 gameN 进程
-    @return game_service, game_addr
+    @return game_service, {'tcp': ..., 'ws': ...}
     """
     game_servers = CTX.config.get('gameServers', {})
     if not game_servers:
@@ -68,7 +68,7 @@ async def auth(session, data):
     picked = _pick_game_addr(account)
     if picked is None:
         return {'ok': False, 'error': 'no game server'}
-    game_service, game_addr = picked
+    game_service, game_addrs = picked
 
     await _record_login(account)
 
@@ -77,12 +77,13 @@ async def auth(session, data):
     await api.call_cluster(GAME_CLUSTER, 'world.prepareLogin', account, token)
 
     session.account = account
-    log.notice('login success: %s -> %s(%s)', account, game_service, game_addr)
+    log.notice('login success: %s -> %s(%s)', account, game_service, game_addrs)
     return {
         'ok': True,
         'account': account,
         'token': token,
-        'gameAddr': game_addr,
+        'gameAddr': game_addrs['tcp'],      # Unity 等原生客户端走 TCP
+        'gameWsAddr': game_addrs['ws'],     # Cocos / H5 / 小程序走 WebSocket
     }
 
 

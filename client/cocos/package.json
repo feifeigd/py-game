@@ -1,0 +1,9 @@
+{
+  "name": "cocos-client",
+  "uuid": "4d0f881e-3d24-4681-a8d1-e67e6e17fa09",
+  "version": "1.0.0",
+  "description": "py-game Cocos Creator client",
+  "creator": {
+    "version": "3.8.0"
+  }
+}
