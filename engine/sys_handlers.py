@@ -32,16 +32,24 @@ from engine.util import log
 # 启动握手
 # ---------------------------------------------------------------------
 _ready_nodes = set()
+_expected_total = 0   # 首次 nodeReady（master 自己）时快照，先于任何动态扩容
+_stages_done = False  # load/init/allReady 只对初始全员广播一次
 
 
 @handler('sys.nodeReady')
 def node_ready(service_name):
     """仅 master 处理：统计就绪的服务数，齐了之后广播 load/init/allReady"""
+    global _expected_total, _stages_done
+    if not _expected_total:
+        _expected_total = len(CTX.config['services'])
     _ready_nodes.add(service_name)
-    total = len(CTX.config['services'])
-    log.notice('service %s ready (%d/%d)', service_name, len(_ready_nodes), total)
-    if len(_ready_nodes) < total:
+    log.notice('service %s ready (%d/%d)', service_name,
+               len(_ready_nodes), _expected_total)
+    # 动态扩容加入的节点不得再次触发全员广播（重复 init 会产生重复后台任务），
+    # 它的 load/init/allReady 由 sys.startService 单独下发
+    if _stages_done or len(_ready_nodes) < _expected_total:
         return
+    _stages_done = True
     asyncio.ensure_future(_broadcast_stages())
 
 
@@ -163,6 +171,12 @@ def do_hotfix(package='app'):
     return hotfix.reload_package(package)
 
 
+@handler('sys.serviceUp')
+def service_up(group, service, addrs):
+    """其它进程组的新节点上线通知（默认忽略，业务可覆盖注册同 key）"""
+    log.info(f'service up: {group}.{service} {addrs}')
+
+
 @handler('sys.execCode')
 def exec_code(code):
     """远程执行 python 代码（GM 用），返回 'success'"""
@@ -189,6 +203,76 @@ def list_actors():
     """列出本进程内所有具名 actor 的 id"""
     from engine.core.actor import _named_actors
     return sorted(_named_actors.keys())
+
+
+# ---------------------------------------------------------------------
+# 动态扩容
+# ---------------------------------------------------------------------
+def _derive_service_config(services, template, name):
+    """从模板服务克隆一份配置，各类端口取全组同类型最大值 +1"""
+    import copy
+    cfg = copy.deepcopy(services[template])
+    cfg['port'] = max(s['port'] for s in services.values()) + 1
+    for server_key in ('tcpServer', 'wsServer', 'webServer'):
+        if server_key not in cfg:
+            continue
+        ports = [int(s[server_key]['addr'].rsplit(':', 1)[1])
+                 for s in services.values() if server_key in s]
+        host = cfg[server_key]['addr'].rsplit(':', 1)[0]
+        cfg[server_key]['addr'] = f'{host}:{max(ports) + 1}'
+    # 标记为动态节点：internal 组网时反向拨号所有存量节点
+    cfg['dynamic'] = True
+    return cfg
+
+
+@handler('sys.startService')
+async def start_service(name, template):
+    """master 入口：按模板动态拉起一个新服务进程（如 game3 克隆自 game1）
+
+    流程: 派生配置（端口自动分配）-> 加入配置表 -> spawn 子进程
+          -> 等新节点组网就绪 -> 单独下发 load/init/allReady
+          -> 向其它进程组广播 sys.serviceUp（携带客户端入口地址）
+    """
+    if CTX.service_name != MASTER_SERVICE:
+        return {'ok': False, 'error': 'only master can start service'}
+    services = CTX.config['services']
+    if name in services:
+        return {'ok': False, 'error': f'service {name} already exists'}
+    if template not in services:
+        return {'ok': False, 'error': f'template {template} not found'}
+
+    cfg = _derive_service_config(services, template, name)
+    services[name] = cfg
+
+    from engine.start.master import spawn_service
+    if spawn_service(name, CTX.config) is None:
+        del services[name]
+        return {'ok': False, 'error': 'spawn failed (not in master process?)'}
+
+    # 等新节点完成组网并报告 nodeReady
+    for _ in range(300):
+        if name in _ready_nodes:
+            break
+        await asyncio.sleep(0.1)
+    else:
+        return {'ok': False, 'error': f'{name} nodeReady timeout', 'config': cfg}
+
+    # 初始全员广播早已结束，对新节点单独走启动流程
+    for stage in ('sys.load', 'sys.init', 'sys.allReady'):
+        await CTX.internal.call(name, stage)
+
+    # 通知其它进程组（login 等）新节点上线，携带客户端入口地址
+    addrs = {}
+    for server_key, label in (('tcpServer', 'tcp'), ('wsServer', 'ws'),
+                              ('webServer', 'web')):
+        if server_key in cfg:
+            addrs[label] = cfg[server_key]['addr']
+    if CTX.cluster is not None:
+        CTX.cluster.broadcast(
+            'sys.serviceUp', CTX.config['serverType'], name, addrs)
+
+    log.notice('service %s started dynamically: %s', name, addrs)
+    return {'ok': True, 'config': cfg, 'addrs': addrs}
 
 
 @handler('sys.stop')

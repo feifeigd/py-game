@@ -34,6 +34,14 @@ def _pick_game_addr(account):
     return names[idx], game_servers[names[idx]]
 
 
+@handler('login.serviceUp')
+def on_service_up(service, addrs):
+    """game 组扩容通知（经本组 master 转发）：新 gameN 纳入分配池"""
+    servers = CTX.config.setdefault('gameServers', {})
+    servers[service] = addrs
+    log.notice(f'game server joined: {service} {addrs}')
+
+
 async def _record_login(account):
     """账号落库: 新号插入整行; 老号增量更新 login_count / last_login 两列"""
     gdb = db.get()

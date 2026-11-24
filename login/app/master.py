@@ -1,5 +1,7 @@
 """login 组 master 服务（组内协调 + 跨组转发 + 库表结构初始化）"""
 from engine import db
+from engine.context import CTX
+from engine.core.handler import handler
 from engine.util import log
 
 
@@ -14,3 +16,12 @@ async def init():
             last_login  TIMESTAMPTZ NOT NULL
         )''')
     log.notice('login master inited')
+
+
+@handler('sys.serviceUp')
+def on_service_up(group, service, addrs):
+    """game 组扩容通知 -> 转发给 login 服务更新 gameServers 分配池"""
+    if group != 'game':
+        return
+    log.notice(f'game service up: {service} {addrs}')
+    CTX.internal.send('login', 'login.serviceUp', service, addrs)

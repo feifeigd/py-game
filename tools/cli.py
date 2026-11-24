@@ -20,6 +20,7 @@
     keys    <service>                    列出该服务的全部 handler
     actors  <service>                    列出该服务的具名 actor
     hotfix  [service|all] [package]      热更新（默认 all app）
+    start   <新服务名> <模板服务名>       动态扩容：按模板拉新进程（端口自动分配）
     help                                 显示帮助
     quit                                 退出交互模式
 
@@ -28,6 +29,7 @@
     python tools/cli.py game call game1 game.onlineCount
     python tools/cli.py game master world.stats
     python tools/cli.py game ask game1 player:tester get_info '{}'
+    python tools/cli.py game start game3 game1   # 动态扩容一个 game3
     python tools/cli.py login master sys.execCode '{"code": "print(1+1)"}'
 """
 import asyncio
@@ -134,6 +136,10 @@ def run_command(cli, argv):
         service = rest[0] if rest else 'all'
         package = rest[1] if len(rest) > 1 else 'app'
         return _show(cli.call('sys.hotfix', service=service, package=package))
+    if cmd == 'start':
+        if len(rest) < 2:
+            raise ValueError('用法: start <新服务名> <模板服务名>')
+        return _show(cli.call('sys.startService', name=rest[0], template=rest[1]))
 
     # 默认：整条当作 master 上的 key 执行
     kwargs = _parse_json(rest[0] if rest else '')
