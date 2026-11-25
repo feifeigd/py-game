@@ -229,15 +229,25 @@ def online_count():
 # 周期落库
 # ---------------------------------------------------------------------
 async def _save_loop():
-    """每 dataSaveInterval 秒把所有在线玩家的脏字段增量写回 Mongo"""
+    """每 dataSaveInterval 秒把所有在线玩家的脏字段增量写回 Mongo
+
+    限流并发（dataSaveConcurrency，默认 20）：逐个 await 是纯串行削峰，
+    玩家规模大了来不及；不限并发则每周期对 Mongo 打一波齐射尖峰。
+    安全性不变：每个玩家的脏字段仍只在自己的 actor 邮箱里读取。"""
     interval = CTX.config.get('dataSaveInterval', 30)
-    while True:
-        await asyncio.sleep(interval)
-        for player in list(_players.values()):
+    sem = asyncio.Semaphore(CTX.config.get('dataSaveConcurrency', 20))
+
+    async def save_one(player):
+        async with sem:
             try:
                 await player.ask('save')
             except Exception:
-                log.exception('save player %s failed', player.account)
+                log.exception(f'save player {player.account} failed')
+
+    while True:
+        await asyncio.sleep(interval)
+        # gather 等本轮全部落完再进入下一周期，避免周期间叠加
+        await asyncio.gather(*(save_one(p) for p in list(_players.values())))
 
 
 def init():
