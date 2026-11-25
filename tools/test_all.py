@@ -16,11 +16,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, ROOT)
 sys.path.insert(1, os.path.join(ROOT, 'tools'))
 
-from test_client import full_flow  # noqa: E402
+from test_client import full_flow, test_zone_isolation  # noqa: E402
 
-GROUPS = ['center', 'recharge', 'game', 'login']
+# (目录, 配置文件, 日志名)；game 组多开两个大区
+GROUPS = [
+    ('center', 'config.json', 'center'),
+    ('recharge', 'config.json', 'recharge'),
+    ('game', 'config_1001.json', 'game_1001'),
+    ('game', 'config_1002.json', 'game_1002'),
+    ('login', 'config.json', 'login'),
+]
 # 等待这些端口就绪再开始测试
-WAIT_PORTS = [11100, 21101, 21102, 41100]
+WAIT_PORTS = [11100, 21101, 21102, 22101, 22102, 41100]
 
 
 def cluster_call(group, rpc_key, **kwargs):
@@ -105,15 +112,15 @@ def main():
     log_files = []
     try:
         os.makedirs(os.path.join(ROOT, 'run'), exist_ok=True)
-        for group in GROUPS:
-            log_fp = open(os.path.join(ROOT, 'run', '%s.log' % group), 'w', encoding='utf-8')
+        for group, config_name, log_name in GROUPS:
+            log_fp = open(os.path.join(ROOT, 'run', f'{log_name}.log'), 'w', encoding='utf-8')
             log_files.append(log_fp)
             proc = subprocess.Popen(
-                [sys.executable, 'start.py'],
+                [sys.executable, 'start.py', config_name],
                 cwd=os.path.join(ROOT, group),
                 stdout=log_fp, stderr=subprocess.STDOUT)
-            procs.append((group, proc))
-            print('started group %s (pid=%d)' % (group, proc.pid))
+            procs.append((log_name, proc))
+            print(f'started group {log_name} (pid={proc.pid})')
 
         for port in WAIT_PORTS:
             if not wait_port(port):
@@ -122,17 +129,21 @@ def main():
         time.sleep(5)
 
         test_cluster_cannot_fake_enter()
-        full_flow('tester', '123456')
+        full_flow('tester', '123456', zone='1001')
 
-        print('== 6. 热更新演示: 对 game 组所有服务 reload app 包 ==')
+        print('== 6. 热更新演示: 对 game 大区 1001 所有服务 reload app 包 ==')
         result = subprocess.run(
             [sys.executable, os.path.join(ROOT, 'tools', 'hotfix.py'),
-             os.path.join(ROOT, 'game'), 'all'],
+             os.path.join(ROOT, 'game'), 'all', 'app', 'config_1001.json'],
             capture_output=True, text=True, timeout=30, cwd=ROOT)
         print(result.stdout or result.stderr)
 
         print('== 7. 热更新后再次登录验证服务仍正常 ==')
-        full_flow('tester2', '123456')
+        full_flow('tester2', '123456', zone='1001')
+
+        # 大区 1002 全流程 + 双区数据隔离
+        full_flow('tester3', '123456', zone='1002')
+        test_zone_isolation('zoner')
 
         print()
         print('########## 全部测试通过 ##########')

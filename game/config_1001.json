@@ -1,0 +1,53 @@
+{
+  "serverId": 1001,
+  "serverType": "game",
+  "dataSaveInterval": 30,
+  "log": {
+    "level": "DEBUG",
+    "path": "./log/1001",
+    "isPrint": true,
+    "maxBytes": 52428800,
+    "backupCount": 30
+  },
+  "db": {
+    "type": "mongo",
+    "url": "mongodb://root:123456@127.0.0.1:27017",
+    "name": "pygame_1001"
+  },
+  "services": {
+    "master": {
+      "port": 21001,
+      "app": "app.world",
+      "cluster": {
+        "clusterPort": 21000,
+        "remoteAddrs": {
+          "center": "127.0.0.1:31000"
+        }
+      }
+    },
+    "game1": {
+      "port": 21002,
+      "app": "app.game",
+      "tcpServer": {
+        "addr": "127.0.0.1:21101",
+        "maxConnection": 2000
+      },
+      "wsServer": {
+        "addr": "127.0.0.1:21201",
+        "maxConnection": 2000
+      }
+    },
+    "game2": {
+      "port": 21003,
+      "app": "app.game",
+      "tcpServer": {
+        "addr": "127.0.0.1:21102",
+        "maxConnection": 2000
+      },
+      "wsServer": {
+        "addr": "127.0.0.1:21202",
+        "maxConnection": 2000
+      }
+    }
+  }
+}

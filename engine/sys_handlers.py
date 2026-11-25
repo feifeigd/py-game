@@ -275,7 +275,7 @@ async def start_service(name, template):
             addrs[label] = cfg[server_key]['addr']
     if CTX.cluster is not None:
         CTX.cluster.broadcast(
-            'sys.serviceUp', CTX.config['serverType'], name, addrs)
+            'sys.serviceUp', CTX.cluster.name, name, addrs)
 
     log.notice('service %s started dynamically: %s', name, addrs)
     return {'ok': True, 'config': cfg, 'addrs': addrs}
@@ -329,7 +329,7 @@ async def stop_service(name):
 
     # 1. 先广播下线，阻止新登录/新请求再路由过去
     if CTX.cluster is not None:
-        CTX.cluster.broadcast('sys.serviceDown', CTX.config['serverType'], name)
+        CTX.cluster.broadcast('sys.serviceDown', CTX.cluster.name, name)
 
     # 2. 排干：踢人落库、关监听（可能较慢，给足超时）
     await CTX.internal.call(name, 'sys.drain', timeout=120)

@@ -86,11 +86,11 @@ class WorldActor(Actor):
         return self.chat_count
 
     async def do_report_center(self):
-        """向 center 组上报在线人数"""
+        """向 center 组上报在线人数（按 cluster 名区分大区，如 game1001）"""
         online = len(self.player_locations)
         try:
             await api.call_cluster('center', 'center.reportOnline',
-                                   'game', online, timeout=5)
+                                   CTX.cluster.name, online, timeout=5)
         except Exception as exc:
             log.warning('report to center failed: %s', exc)
         return online

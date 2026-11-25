@@ -26,6 +26,9 @@ async def main():
     package = sys.argv[3] if len(sys.argv) > 3 else 'app'
 
     config_path = os.path.join(project, 'config.json')
+    # 第 4 个参数可指定配置文件（多开大区时用，如 config_1002.json）
+    if len(sys.argv) > 4:
+        config_path = os.path.join(project, sys.argv[4])
     with open(config_path, 'r', encoding='utf-8') as fp:
         config = json.load(fp)
     cluster_port = config['services']['master']['cluster']['clusterPort']

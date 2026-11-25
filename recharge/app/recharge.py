@@ -21,14 +21,17 @@ from engine.context import CTX
 from engine.core.handler import handler
 from engine.util import log
 
-GAME_CLUSTER = 'game'
+GAME_CLUSTER_PREFIX = 'game'  # 大区 cluster 名 = game<zone>，如 game1001
+
+DEFAULT_ZONE = '1001'
 
 
 async def pay(query, body):
-    """支付回调入口: /pay?account=xx&item=diamond&count=100"""
+    """支付回调入口: /pay?account=xx&item=diamond&count=100&zone=1001"""
     account = query.get('account', '')
     item = query.get('item', 'diamond')
     count = int(query.get('count', 0))
+    zone = str(query.get('zone') or DEFAULT_ZONE)
     if not account or count <= 0:
         return {'ret': 1, 'msg': 'bad params'}
 
@@ -37,16 +40,19 @@ async def pay(query, body):
     await gdb.insert('orders', {
         'order_id': order_id,
         'account': account,
+        'zone': zone,
         'item': item,
         'count': count,
         'status': 'pending',
         'created_at': datetime.now(timezone.utc),
         'delivered_at': None,
     })
-    log.notice('recharge order %s: %s %s x%s', order_id, account, item, count)
+    log.notice('recharge order %s: %s zone=%s %s x%s',
+               order_id, account, zone, item, count)
 
-    # 跨组调用 game 组 -> world 路由到玩家所在进程 -> 玩家 actor 发货
-    result = await api.call_cluster(GAME_CLUSTER, 'recharge.onRecharge',
+    # 跨组调用对应大区的 world -> 路由到玩家所在进程 -> 玩家 actor 发货
+    result = await api.call_cluster(f'{GAME_CLUSTER_PREFIX}{zone}',
+                                    'recharge.onRecharge',
                                     account, item, count)
     # 发货成功: 增量更新订单状态（玩家不在线则保持 pending 等补发）
     if result.get('ret') == 0 and 'delivered' in result.get('msg', ''):
@@ -60,7 +66,7 @@ async def pay(query, body):
 @handler('recharge.listOrders')
 async def list_orders():
     rows = await db.get().fetch(
-        'SELECT order_id, account, item, count, status, created_at, delivered_at'
+        'SELECT order_id, account, zone, item, count, status, created_at, delivered_at'
         ' FROM orders ORDER BY created_at DESC LIMIT 100')
     return [dict(r) for r in rows]
 
@@ -77,6 +83,9 @@ async def init():
             created_at   TIMESTAMPTZ NOT NULL,
             delivered_at TIMESTAMPTZ
         )''')
+    # 老表补 zone 列（CREATE TABLE IF NOT EXISTS 不会修改已有表）
+    await db.get().execute(
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS zone TEXT NOT NULL DEFAULT '1001'")
     assert CTX.web_server is not None
     CTX.web_server.route('/pay')(pay)
     log.notice('recharge service inited, /pay ready')

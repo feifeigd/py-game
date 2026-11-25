@@ -49,9 +49,14 @@ class ClusterCli:
     """与一组 master 的 clusterPort 通话的短连接客户端（每条命令一次连接）"""
 
     def __init__(self, group):
-        # group = center|game|login|recharge, 就是ROOT子文件夹的名字
+        # group = center|game|login|recharge, 就是ROOT子文件夹的名字；
+        # 多开大区的组用 "game/config_1002.json" 指定非默认配置
+        if '/' in group or '\\' in group:
+            group, config_name = group.replace('\\', '/').split('/', 1)
+        else:
+            config_name = 'config.json'
         self.group = group
-        config_path = os.path.join(ROOT, group, 'config.json')
+        config_path = os.path.join(ROOT, group, config_name)
         with open(config_path, 'r', encoding='utf-8') as fp:
             config = json.load(fp)
         cluster = config['services']['master']['cluster']

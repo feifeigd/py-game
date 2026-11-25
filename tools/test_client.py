@@ -93,17 +93,19 @@ def http_get(url):
         return resp.read().decode('utf-8')
 
 
-def full_flow(account='tester', password='123456'):
-    """完整流程: 登录 -> 进游戏 -> 聊天 -> 查信息 -> 充值"""
-    print('== 1. 连接 login 服务器并登录 ==')
+def full_flow(account='tester', password='123456', zone='1001'):
+    """完整流程: 登录（选大区）-> 进游戏 -> 聊天 -> 查信息 -> 充值"""
+    print(f'== 1. 连接 login 服务器并登录（大区 {zone}）==')
     login_client = GameClient().connect('127.0.0.1:11100')
-    result = login_client.call('login.auth', {'account': account, 'password': password})
+    result = login_client.call('login.auth', {
+        'account': account, 'password': password, 'zone': zone})
     print('  login.auth ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
+    assert result.get('zone') == zone, result
     token, game_addr = result['token'], result['gameAddr']
     login_client.close()
 
-    print('== 2. 连接 game 进程 %s 并进入游戏 ==' % game_addr)
+    print(f'== 2. 连接 game 进程 {game_addr} 并进入游戏 ==')
     game = GameClient().connect(game_addr)
     result = game.call('game.enter', {'account': account, 'token': token})
     print('  game.enter ->', json.dumps(result, ensure_ascii=False))
@@ -113,10 +115,10 @@ def full_flow(account='tester', password='123456'):
     for bad_key in ('world.verifyToken', 'sys.hotfix', 'sys.execCode'):
         try:
             game.call(bad_key, {})
-            raise AssertionError('%s 不应允许客户端调用' % bad_key)
+            raise AssertionError(f'{bad_key} 不应允许客户端调用')
         except RuntimeError as exc:
             assert 'not allowed' in str(exc), exc
-            print('  %s -> 已拒绝: %s' % (bad_key, exc))
+            print(f'  {bad_key} -> 已拒绝: {exc}')
     # 未登录会话同样不得调用内部 key（login 连接已关闭，重连一个裸会话验证）
     raw = GameClient().connect(game_addr)
     for bad_key in ('world.verifyToken', 'player.chat'):
@@ -136,9 +138,9 @@ def full_flow(account='tester', password='123456'):
     result = game.call('player.getInfo', {})
     print('  player.getInfo ->', json.dumps(result, ensure_ascii=False))
 
-    print('== 5. 充值（HTTP 回调 -> recharge 组 -> world -> 玩家 actor）==')
+    print('== 5. 充值（HTTP 回调 -> recharge 组 -> 大区 world -> 玩家 actor）==')
     before = result['diamond']
-    resp = http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100')
+    resp = http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&zone={zone}')
     print('  /pay ->', resp)
 
     import time
@@ -152,7 +154,44 @@ def full_flow(account='tester', password='123456'):
     assert 'recharge.push' in pushes
     assert 'chat.push' in pushes
     game.close()
-    print('== 全流程测试通过 ==')
+    print(f'== 大区 {zone} 全流程测试通过 ==')
+    return True
+
+
+def test_zone_isolation(account='zoner'):
+    """大区数据隔离: 同一账号在两个大区是两个独立角色（各自 Mongo 库）"""
+    print(f'== 8. 大区隔离: 同一账号 {account} 在 1001/1002 数据独立 ==')
+
+    def enter(zone):
+        c = GameClient().connect('127.0.0.1:11100')
+        r = c.call('login.auth',
+                   {'account': account, 'password': '123456', 'zone': zone})
+        assert r['ok'], r
+        c.close()
+        g = GameClient().connect(r['gameAddr'])
+        r2 = g.call('game.enter', {'account': account, 'token': r['token']})
+        assert r2['ok'], r2
+        return g, r2['player']
+
+    # 1001：进游戏，在线充 100 钻
+    g1, player1 = enter('1001')
+    print(f'  大区 1001 进入: {player1}')
+    d1 = player1['diamond']
+    http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&zone=1001')
+    import time
+    time.sleep(1)
+    after1 = g1.call('player.getInfo', {})['diamond']
+    assert after1 == d1 + 100, (d1, after1)
+    print(f'  大区 1001 充值: {d1} -> {after1}')
+    g1.close()
+
+    # 1002：同账号是另一个角色，从未充值，应是默认档（0 钻）
+    g2, player2 = enter('1002')
+    print(f'  大区 1002 进入: {player2}')
+    assert player2['diamond'] == 0, player2
+    assert player2['diamond'] != after1
+    g2.close()
+    print('== 大区隔离验证通过 ==')
     return True
 
 

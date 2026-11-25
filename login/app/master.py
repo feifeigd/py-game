@@ -18,19 +18,28 @@ async def init():
     log.notice('login master inited')
 
 
+def _zone_of_cluster(group):
+    """cluster 名 -> 大区号: 'game1001' -> '1001'，'game'（无 serverId）-> 默认 1001"""
+    if not group.startswith('game'):
+        return None
+    return group[len('game'):] or '1001'
+
+
 @handler('sys.serviceUp')
 def on_service_up(group, service, addrs):
-    """game 组扩容通知 -> 转发给 login 服务更新 gameServers 分配池"""
-    if group != 'game':
+    """game 大区扩容通知 -> 转发给 login 服务更新对应大区的分配池"""
+    zone = _zone_of_cluster(group)
+    if zone is None:
         return
-    log.notice(f'game service up: {service} {addrs}')
-    CTX.internal.send('login', 'login.serviceUp', service, addrs)
+    log.notice(f'game service up: {group} {service} {addrs}')
+    CTX.internal.send('login', 'login.serviceUp', zone, service, addrs)
 
 
 @handler('sys.serviceDown')
 def on_service_down(group, service):
-    """game 组缩容通知 -> 转发给 login 服务把节点移出分配池"""
-    if group != 'game':
+    """game 大区缩容通知 -> 转发给 login 服务把节点移出对应大区的分配池"""
+    zone = _zone_of_cluster(group)
+    if zone is None:
         return
-    log.notice(f'game service down: {service}')
-    CTX.internal.send('login', 'login.serviceDown', service)
+    log.notice(f'game service down: {group} {service}')
+    CTX.internal.send('login', 'login.serviceDown', zone, service)

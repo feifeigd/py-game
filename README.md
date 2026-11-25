@@ -80,22 +80,34 @@ docker compose up -d
 uv sync
 
 # 1. 启动四个进程组（各开一个终端；uv run 会自动向上找到项目根）
-cd game     && uv run python start.py
+#    game 组按大区多开：config_<大区号>.json，一个大区一套独立进程组 + 独立 Mongo 库
+cd game     && uv run python start.py config_1001.json   # 大区 1001
+cd game     && uv run python start.py config_1002.json   # 大区 1002
 cd login    && uv run python start.py
 cd center   && uv run python start.py
 cd recharge && uv run python start.py
 # 也可以先激活虚拟环境再用裸 python: .venv\Scripts\activate
 
-# 2. 一键联调测试（自动起全部组 + 全流程验证 + 热更新演示）
+# 2. 一键联调测试（自动起全部组（含两个大区）+ 全流程验证 + 热更新演示 + 大区隔离验证）
 uv run python tools/test_all.py
 
-# 3. 热更新（改了 game/app/ 下的代码后，不重启进程生效）
-python tools/hotfix.py game          # game 组所有服务
-python tools/hotfix.py game game1    # 只热更 game1
+# 3. 热更新（改了 game/app/ 下的代码后，不重启进程生效；第 4 个参数指定大区配置）
+python tools/hotfix.py game all app config_1001.json   # 大区 1001 所有服务
+python tools/hotfix.py game game1                      # 只热更默认配置的 game1
 
-# 4. 模拟充值
-curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
+# 4. 模拟充值（zone 参数指定大区，缺省 1001）
+curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&zone=1001"
 ```
+
+## 大区（多开）
+
+- `game/config_<zone>.json`：一个文件 = 一个大区，`serverId` 决定 cluster 名（`game<zone>`），
+  端口段和 Mongo 库（`pygame_<zone>`）各自独立
+- 客户端登录选区：`login.auth` 带 `zone` 字段（缺省 `1001`），login 按 `zones.<zone>.gameServers`
+  把玩家分配到该大区的 gameN，令牌也登记到对应大区的 world
+- 充值按 zone 路由到对应大区发货；center 按 cluster 名分开统计各区在线
+- 动态扩缩容按大区隔离：`python tools/cli.py game/config_1002.json start game3 game1`
+  只会把 game3 加进 1002 的分配池
 
 ## 数据层（增量更新）
 
@@ -119,9 +131,10 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100"
 |---|---|---|---|
 | login | master | 11001 | clusterPort 11000 |
 | login | login | 11002 | 客户端 TCP 11100 |
-| game | master(world) | 21001 | clusterPort 21000 |
-| game | game1 | 21002 | 客户端 TCP 21101 |
-| game | game2 | 21003 | 客户端 TCP 21102 |
+| game 大区1001 | master(world) | 21001 | clusterPort 21000 |
+| game 大区1001 | game1 / game2 | 21002 / 21003 | 客户端 TCP 21101 / 21102 |
+| game 大区1002 | master(world) | 22001 | clusterPort 22000 |
+| game 大区1002 | game1 / game2 | 22002 / 22003 | 客户端 TCP 22101 / 22102 |
 | center | master | 31001 | clusterPort 31000 |
 | recharge | master | 41001 | clusterPort 41000 |
 | recharge | recharge | 41002 | HTTP 41100 |
