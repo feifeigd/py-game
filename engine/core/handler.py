@@ -19,6 +19,9 @@ def handler(key, public=False):
     """注册消息处理函数: @handler('world.verifyToken')
     public=True 才允许客户端直连调用，默认仅集群/组内可达。"""
     def deco(func):
+        if key in _HANDLERS:
+            # 启动期覆盖多半是重复注册 bug；热更 reload 时的覆盖是预期行为
+            log.warning(f'handler {key} overwritten by {func.__module__}.{func.__qualname__}')
         _HANDLERS[key] = func
         if public:
             _PUBLIC.add(key)

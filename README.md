@@ -68,6 +68,7 @@ py-game/
   tools/cli.py             集群 debug CLI（连 master 的 clusterPort 发内部 RPC：call/send/ask/tell/keys/actors/hotfix）
   tools/test_client.py     模拟客户端（与 Unity 同协议）
   tools/test_all.py        一键联调：起四个组->登录->聊天->充值->热更->再登录
+  tools/test_rebind.py     嵌套对象热更重绑（rebind_fields）验证
   client/unity/            Unity 客户端工程（见 client/unity/README.md）
   client/cocos/            Cocos Creator 客户端工程，走 WebSocket（见 client/cocos/README.md）
 ```
@@ -177,7 +178,16 @@ python tools/cli.py game stop game3          # 优雅缩容：踢人落库 -> �
 - 模块级状态用 `if 'x' not in globals():` 守卫保住（`importlib.reload` 复用模块 `__dict__`），
   参考 `game/app/world.py`、`game/app/game.py` 的写法。
 - 新增 handler：reload 后装饰器重新执行即注册；改逻辑：注册表按 key 覆盖。
-- actor 实例（在线玩家）通过 `__class__` 重绑定获得新逻辑，并回调 `on_hotfix()`。
+  HTTP 路由同理：`@CTX.web_server.route('/pay')` 写在函数定义处（参考
+  `recharge/app/recharge.py`），reload 时自动覆盖路由表——不要在 `init()` 里手动注册，
+  否则热更后仍走旧函数。
+- handler / 路由被覆盖注册时会输出 WARNING 日志：热更时出现属预期，
+  启动期出现则是重复注册 bug。
+- actor 实例（在线玩家）通过 `__class__` 重绑定获得新逻辑，并回调 `on_hotfix()`；
+  actor 持有的嵌套对象（如 `self.abc = Abc()`）不会自动更新，在 `on_hotfix` 里用
+  `self.rebind_fields('abc')` 手动重绑（`__slots__` 布局不兼容时自动降级重建实例并迁移状态）。
+- `init()` 里启动的长驻协程（如周期落库 `_save_loop`）热更后仍跑旧代码，
+  改循环逻辑需重启进程。
 - `sys.execCode` 保留了参考项目的在线执行任意代码能力（GM 兜底手段）。
 
 ## 已知简化（生产化 TODO）

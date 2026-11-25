@@ -148,7 +148,9 @@ class Player(Actor):
         logout(self.account, self)
 
     def on_hotfix(self):
-        log.info('player %s hotfixed (class rebound)', self.account)
+        # 引擎只重绑 Player 自己的类；若持有嵌套业务对象（如 self.abc = Abc()），
+        # 它的类不会自动更新，需在此手动重绑: self.rebind_fields('abc')
+        log.info(f'player {self.account} hotfixed (class rebound)')
 
 
 # 热更新安全：reload 复用模块 __dict__，保住在线玩家表

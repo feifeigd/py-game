@@ -27,6 +27,9 @@ class WebServer:
 
     def route(self, path):
         def deco(func):
+            if path in self._routes:
+                # 热更 reload 重跑装饰器会覆盖旧函数，属预期；启动期覆盖则是 bug
+                log.warning(f'web route {path} overwritten by {func.__module__}.{func.__qualname__}')
             self._routes[path] = func
             return func
         return deco

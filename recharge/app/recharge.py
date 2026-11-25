@@ -15,10 +15,10 @@ recharge 组充值服务
 import uuid
 from datetime import datetime, timezone
 
-from engine import api
-from engine import db
+from engine import api, db
 from engine.context import CTX
 from engine.core.handler import handler
+from engine.net.web import WebServer
 from engine.util import log
 
 GAME_CLUSTER_PREFIX = 'game'  # 大区 cluster 名 = game<zone>，如 game1001
@@ -26,6 +26,10 @@ GAME_CLUSTER_PREFIX = 'game'  # 大区 cluster 名 = game<zone>，如 game1001
 DEFAULT_ZONE = '1001'
 
 
+# 装饰器在模块顶层注册路由（此刻 CTX.web_server 已就绪，见启动顺序），
+# 热更 reload 会重跑这里，新 pay 自动覆盖路由表里的旧函数
+assert isinstance(CTX.web_server, WebServer)
+@CTX.web_server.route('/pay')
 async def pay(query, body):
     """支付回调入口: /pay?account=xx&item=diamond&count=100&zone=1001"""
     account = query.get('account', '')
@@ -72,7 +76,7 @@ async def list_orders():
 
 
 async def init():
-    # 建表 + 把 HTTP 路由挂到本服务的 web server 上
+    # 建表（路由 /pay 已在模块顶层用装饰器注册）
     await db.get().execute('''
         CREATE TABLE IF NOT EXISTS orders (
             order_id     TEXT PRIMARY KEY,
@@ -86,6 +90,4 @@ async def init():
     # 老表补 zone 列（CREATE TABLE IF NOT EXISTS 不会修改已有表）
     await db.get().execute(
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS zone TEXT NOT NULL DEFAULT '1001'")
-    assert CTX.web_server is not None
-    CTX.web_server.route('/pay')(pay)
     log.notice('recharge service inited, /pay ready')

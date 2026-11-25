@@ -23,8 +23,9 @@ tools/hotfix.py ──TCP──► 目标组 master (clusterPort)
 
 `reload_package()` 做四件事（`engine/hotfix.py`）：
 
-1. **`importlib.reload` 目标模块**——模块代码重新执行，`@handler` 装饰器随之重新注册，
-   handler 注册表按 key 覆盖，新逻辑立即生效
+1. **`importlib.reload` 目标模块**——模块代码重新执行，`@handler` 装饰器与
+   `@CTX.web_server.route(...)` 路由装饰器随之重新注册，handler 表按 key、
+   路由表按 path 覆盖，新逻辑立即生效（覆盖已有注册时输出 WARNING，见常见坑 7）
 2. **actor 类重绑定**——遍历所有存活 actor（在线玩家、WorldActor 等），
    把 `__class__` 替换为 reload 后的同名新类，**实例状态原样保留**，逻辑焕然一新
 3. 调用每个模块的 `on_hotfix()` 钩子（若定义了）
@@ -135,6 +136,30 @@ def on_hotfix():
 actor 实例也有 `on_hotfix()` 钩子（`engine/core/actor.py`），
 类重绑定后逐个回调，适合在热更后修复实例字段（比如给老玩家补新字段默认值）。
 
+### 3.5 actor 持有的嵌套对象：rebind_fields
+
+引擎只重绑 actor 本人的 `__class__`，actor 持有的**嵌套业务对象**
+（如 `self.abc = Abc()`）的类不会自动更新——不处理的话，老实例继续跑旧逻辑，
+且 `isinstance(self.abc, Abc)` 在热更后变成 False（旧实例 vs 新类）。
+
+在 actor 的 `on_hotfix()` 里用 `rebind_fields` 手动重绑：
+
+```python
+class Player(Actor):
+    def on_hotfix(self):
+        self.rebind_fields('abc')   # 把 self.abc 重绑到 reload 后的新 Abc
+```
+
+`rebind_object`（`engine/core/actor.py`）的行为：
+
+- **布局兼容**（普通 `__dict__` 类，或 `__slots__` 一致）：直接换 `__class__`，实例身份不变
+- **布局不兼容**（`__slots__` 变了）：降级为 `__new__` 重建实例，迁移 `__dict__`
+  和新旧共有的 slot 值，并输出 NOTICE 日志；新类新增字段的默认值需在新类里给好
+- **类被删/改名，或定义在 engine 等未热更模块**：原样返回，不动
+
+注意 `rebind_fields` 按字段名显式指定，不会自动遍历 actor 的所有属性
+（session、DirtyRecord 等引擎对象本就不需要重绑）。
+
 ---
 
 ## 4. 常见坑
@@ -167,6 +192,25 @@ actor 实例也有 `on_hotfix()` 钩子（`engine/core/actor.py`），
    不要给转发参数起名 `key` 以外的保留字冲突——框架 `dispatch` 首参已改名
    `msg_key` 规避此问题（见 commit `db6d4e9`）。
 
+6. **HTTP 路由不要把注册写进 init()**
+   `WebServer._routes` 持有的是函数对象引用。在 `init()` 里手动
+   `CTX.web_server.route('/pay')(pay)`，热更后路由表仍指向**旧函数**，
+   改 `pay` 的逻辑不生效且不报错（改模块级常量却生效——reload 复用
+   `__dict__`，旧函数的全局查找能看到新值，问题极具隐蔽性）。
+   正确写法是把装饰器写在函数定义处（参考 `recharge/app/recharge.py` 的 `pay`），
+   reload 重跑模块顶层代码时自动覆盖路由表。
+
+7. **handler / 路由覆盖注册会输出 WARNING**
+   热更 reload 时的覆盖是预期行为；**启动期**出现 `handler ... overwritten` /
+   `web route ... overwritten` 警告说明有重复注册（两个模块注册了同名 key/path），
+   属于 bug，应立即排查。
+
+8. **init() 里启动的长驻协程不热更**
+   `_save_loop`、`_report_loop` 这类在 `init()` 里 `ensure_future` 的循环，
+   热更后跑的还是旧代码体（它们引用的模块全局能看到新值，但循环逻辑本身不变）。
+   改循环逻辑需重启进程；只调参数的话把参数放模块级常量/配置里、
+   循环每次迭代时读取，即可热更。
+
 ---
 
 ## 5. 验证工具
@@ -177,6 +221,9 @@ python tools/test_all.py
 
 # 热更粒度专项演示（模块级 + 函数级，自动起停 game 组）
 python run/demo_hotfix.py
+
+# 嵌套对象热更重绑（rebind_fields）验证
+python tools/test_rebind.py
 ```
 
 ---
