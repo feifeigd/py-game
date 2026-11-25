@@ -69,6 +69,15 @@ public class GameManager : MonoBehaviour
                 if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
                 Account = rsp.account;
                 Debug.Log($"[Login] auth ok, zones={rsp.zones.Count}");
+                if (!string.IsNullOrEmpty(rsp.token))
+                {
+                    // 单大区：服务端已直发令牌，免选区直接进游戏
+                    Zone = rsp.zone;
+                    Token = rsp.token;
+                    Debug.Log($"[Login] single zone={Zone}, gameAddr={rsp.gameAddr}");
+                    EnterGame(rsp.gameAddr, onError);
+                    return;
+                }
                 Bootstrap.I.ShowZoneSelect(rsp.zones);
             },
             err => onError?.Invoke(err));

@@ -39,6 +39,10 @@ public class LoginAuthRsp
     public string error;
     public string account;
     public List<ZoneInfo> zones;   // 可选大区列表，玩家选区后调 login.enterZone
+    // 只有一个大区时服务端直接发令牌，客户端免去 login.enterZone
+    public string zone;
+    public string token;
+    public string gameAddr;
 }
 
 // ------------------------- 选区 -------------------------

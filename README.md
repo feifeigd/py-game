@@ -105,7 +105,8 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&zone=1001
   端口段和 Mongo 库（`pygame_<zone>`）各自独立
 - 登录两段式选区：先 `login.auth {account, password}` 只验证账号，返回可选大区列表；
   玩家选定后 `login.enterZone {zone}`，login 按 `zones.<zone>.gameServers` 把玩家分配到
-  该大区的 gameN，令牌也登记到对应大区的 world，返回该大区的 game 地址
+  该大区的 gameN，令牌也登记到对应大区的 world，返回该大区的 game 地址。
+  **只有一个大区时 `login.auth` 直接发令牌返回 game 地址**，客户端免去选区调用
 - 充值按 zone 路由到对应大区发货；center 按 cluster 名分开统计各区在线
 - 动态扩缩容按大区隔离：`python tools/cli.py game/config_1002.json start game3 game1`
   只会把 game3 加进 1002 的分配池
@@ -158,8 +159,9 @@ python tools/cli.py game stop game3          # 优雅缩容：踢人落库 -> �
 ## 登录链路（端到端）
 
 1. 客户端 TCP 连 login 服务（11100），发 `login.auth {account, password}` 验证账号，
-   返回可选大区列表 `zones`
-2. 玩家选定大区后发 `login.enterZone {zone}`：login 生成 token，**跨组调用**该大区
+   返回可选大区列表 `zones`；**只有一个大区时直接顺路发令牌**，响应里带
+   `{zone, token, gameAddr}`，客户端跳到第 3 步
+2. 多个大区时玩家选定后发 `login.enterZone {zone}`：login 生成 token，**跨组调用**该大区
    game 组全局进程 `world.prepareLogin` 登记令牌，按账号哈希分配 gameN 进程，
    返回 `{token, gameAddr}`
 3. 客户端连 gameAddr，发 `game.enter {account, token}`

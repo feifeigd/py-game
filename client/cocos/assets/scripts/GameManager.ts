@@ -88,6 +88,14 @@ export class GameManager {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'login failed'); return; }
                     this.account = rsp.account;
                     console.log(`[Login] auth ok, zones=${rsp.zones.length}`);
+                    if (rsp.token) {
+                        // 单大区：服务端已直发令牌，免选区直接进游戏
+                        this.zone = rsp.zone!;
+                        this.token = rsp.token;
+                        console.log(`[Login] single zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
+                        this._enterGame(rsp.gameWsAddr!, onError);
+                        return;
+                    }
                     if (Bootstrap.I) Bootstrap.I.showZoneSelect(rsp.zones);
                 },
                 err => onError && onError(err));

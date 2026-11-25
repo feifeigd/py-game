@@ -101,11 +101,16 @@ def full_flow(account='tester', password='123456', zone='1001'):
     print('  login.auth ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
     assert any(z['zone'] == zone for z in result['zones']), result
-    # 选区：发令牌 + 分配该大区的 game 进程
-    result = login_client.call('login.enterZone', {'zone': zone})
-    print('  login.enterZone ->', json.dumps(result, ensure_ascii=False))
-    assert result['ok'], result
-    assert result.get('zone') == zone, result
+    if result.get('token'):
+        # 只有一个大区：auth 已直接发令牌，免去 login.enterZone
+        print(f'  单大区直发令牌: zone={result["zone"]} gameAddr={result["gameAddr"]}')
+        assert result['zone'] == zone, result
+    else:
+        # 选区：发令牌 + 分配该大区的 game 进程
+        result = login_client.call('login.enterZone', {'zone': zone})
+        print('  login.enterZone ->', json.dumps(result, ensure_ascii=False))
+        assert result['ok'], result
+        assert result.get('zone') == zone, result
     token, game_addr = result['token'], result['gameAddr']
     login_client.close()
 
@@ -170,8 +175,9 @@ def test_zone_isolation(account='zoner'):
         c = GameClient().connect('127.0.0.1:11100')
         r = c.call('login.auth', {'account': account, 'password': '123456'})
         assert r['ok'], r
-        r = c.call('login.enterZone', {'zone': zone})
-        assert r['ok'], r
+        if not r.get('token'):   # 单大区时 auth 已直发令牌，无需选区
+            r = c.call('login.enterZone', {'zone': zone})
+            assert r['ok'], r
         c.close()
         g = GameClient().connect(r['gameAddr'])
         r2 = g.call('game.enter', {'account': account, 'token': r['token']})

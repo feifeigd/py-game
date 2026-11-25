@@ -4,8 +4,9 @@ login 组登录服务
 客户端登录流程（两段式：先验账号，后选大区）:
     1. 客户端 TCP 连接 login 服务，发送 login.auth {account, password}
        -> 校验账号（演示版：密码 123456 或 guest 开头免密），落 PG accounts 表，
-          返回可选大区列表（此时不发令牌、不分配 game）
-    2. 玩家选定大区，发送 login.enterZone {zone}
+          返回可选大区列表；只有一个大区时直接发令牌返回 game 地址，
+          客户端免去第 2 步
+    2. 多个大区时玩家选定大区，发送 login.enterZone {zone}
        -> 生成 token 并登记到该大区的 world，按账号哈希在大区内分配 gameN，
           返回其客户端地址（只有 auth 成功的会话才能选区）
     3. 客户端拿 token 去连对应的 gameN 进程完成进入游戏
@@ -96,22 +97,15 @@ async def auth(session, data):
         for zone_id, zone_cfg in sorted(CTX.config.get('zones', {}).items())
     ]
     log.notice('auth success: %s, zones=%s', account, [z['zone'] for z in zones])
-    return {'ok': True, 'account': account, 'zones': zones}
+    rsp = {'ok': True, 'account': account, 'zones': zones}
+    if len(zones) == 1:
+        # 只有一个大区：直接发令牌返回 game 地址，客户端免去 login.enterZone
+        rsp.update(await _issue_token(account, zones[0]['zone']))
+    return rsp
 
 
-@handler('login.enterZone', public=True)
-async def enter_zone(session, data):
-    """第二步：选区。发令牌并登记到该大区 world，返回分配的 game 地址"""
-    if not isinstance(session, ClientSession):
-        log.warning('login.enterZone rejected: not a client session (%r)', session)
-        return {'ok': False, 'error': 'invalid session'}
-    account = session.account
-    if not account:
-        return {'ok': False, 'error': 'auth first'}
-    zone = str(data.get('zone') or '')
-    if not zone:
-        return {'ok': False, 'error': 'zone required'}
-
+async def _issue_token(account, zone):
+    """为账号在指定大区发令牌：登记到该大区 world，返回分配的 game 地址"""
     picked = _pick_game_addr(account, zone)
     if picked is None:
         return {'ok': False, 'error': f'no game server in zone {zone}'}
@@ -131,3 +125,18 @@ async def enter_zone(session, data):
         'gameAddr': game_addrs['tcp'],      # Unity 等原生客户端走 TCP
         'gameWsAddr': game_addrs['ws'],     # Cocos / H5 / 小程序走 WebSocket
     }
+
+
+@handler('login.enterZone', public=True)
+async def enter_zone(session, data):
+    """第二步：选区。发令牌并登记到该大区 world，返回分配的 game 地址"""
+    if not isinstance(session, ClientSession):
+        log.warning('login.enterZone rejected: not a client session (%r)', session)
+        return {'ok': False, 'error': 'invalid session'}
+    account = session.account
+    if not account:
+        return {'ok': False, 'error': 'auth first'}
+    zone = str(data.get('zone') or '')
+    if not zone:
+        return {'ok': False, 'error': 'zone required'}
+    return await _issue_token(account, zone)

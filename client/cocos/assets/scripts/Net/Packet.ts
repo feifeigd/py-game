@@ -27,6 +27,11 @@ export interface LoginAuthRsp {
     error?: string;
     account: string;
     zones: ZoneInfo[];   // 可选大区列表，玩家选区后调 login.enterZone
+    // 只有一个大区时服务端直接发令牌，客户端免去 login.enterZone
+    zone?: string;
+    token?: string;
+    gameAddr?: string;
+    gameWsAddr?: string;
 }
 
 // ------------------------- 选区 -------------------------
