@@ -3,7 +3,8 @@ using UnityEngine;
 /// <summary>
 /// 游戏主流程：登录(login 组) -> 进入游戏(game 组) -> 聊天/充值推送。
 /// 对应服务端的完整登录链路:
-///   login.auth(LoginReq) -> LoginAuthRsp{token, gameAddr}
+///   login.auth{account, password} -> LoginAuthRsp{zones}，玩家选区
+///   login.enterZone{zone} -> EnterZoneRsp{token, gameAddr}
 ///   连接 gameAddr -> game.enter{account, token} -> GameEnterRsp{player}
 /// </summary>
 public class GameManager : MonoBehaviour
@@ -56,20 +57,34 @@ public class GameManager : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    /// <summary>第一步：连 login 服登录（选择大区），成功后自动连 game 服进入游戏</summary>
-    public void Login(string account, string password, string zone = "1001",
+    /// <summary>第一步：连 login 服验证账号，成功后展示大区列表供玩家选择</summary>
+    public void Login(string account, string password,
                       System.Action<string> onError = null)
     {
         NetworkClient.I.Connect(loginHost, loginPort);
         NetworkClient.I.Call<LoginAuthRsp>("login.auth",
-            new LoginAuthReq { account = account, password = password, zone = zone },
+            new LoginAuthReq { account = account, password = password },
             rsp =>
             {
                 if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
                 Account = rsp.account;
+                Debug.Log($"[Login] auth ok, zones={rsp.zones.Count}");
+                Bootstrap.I.ShowZoneSelect(rsp.zones);
+            },
+            err => onError?.Invoke(err));
+    }
+
+    /// <summary>第二步：玩家选定大区，发令牌并返回该大区的 game 地址</summary>
+    public void EnterZone(string zone, System.Action<string> onError = null)
+    {
+        NetworkClient.I.Call<EnterZoneRsp>("login.enterZone",
+            new EnterZoneReq { zone = zone },
+            rsp =>
+            {
+                if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
                 Zone = rsp.zone;
                 Token = rsp.token;
-                Debug.Log($"[Login] ok, zone={Zone}, gameAddr={rsp.gameAddr}");
+                Debug.Log($"[Login] enter zone={Zone}, gameAddr={rsp.gameAddr}");
                 EnterGame(rsp.gameAddr, onError);
             },
             err => onError?.Invoke(err));

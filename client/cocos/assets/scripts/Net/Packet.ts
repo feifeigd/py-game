@@ -15,10 +15,26 @@ export interface Packet {
 export interface LoginAuthReq {
     account: string;
     password: string;
-    zone: string;      // 大区号，如 "1001"/"1002"
+}
+
+export interface ZoneInfo {
+    zone: string;    // 大区号，如 "1001"
+    name: string;    // 展示名，如 "一区·风起云涌"
 }
 
 export interface LoginAuthRsp {
+    ok: boolean;
+    error?: string;
+    account: string;
+    zones: ZoneInfo[];   // 可选大区列表，玩家选区后调 login.enterZone
+}
+
+// ------------------------- 选区 -------------------------
+export interface EnterZoneReq {
+    zone: string;
+}
+
+export interface EnterZoneRsp {
     ok: boolean;
     error?: string;
     account: string;

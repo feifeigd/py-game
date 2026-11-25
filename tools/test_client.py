@@ -94,12 +94,16 @@ def http_get(url):
 
 
 def full_flow(account='tester', password='123456', zone='1001'):
-    """完整流程: 登录（选大区）-> 进游戏 -> 聊天 -> 查信息 -> 充值"""
-    print(f'== 1. 连接 login 服务器并登录（大区 {zone}）==')
+    """完整流程: 登录（auth）-> 选大区（enterZone）-> 进游戏 -> 聊天 -> 查信息 -> 充值"""
+    print(f'== 1. 连接 login 服务器登录账号，再选大区 {zone} ==')
     login_client = GameClient().connect('127.0.0.1:11100')
-    result = login_client.call('login.auth', {
-        'account': account, 'password': password, 'zone': zone})
+    result = login_client.call('login.auth', {'account': account, 'password': password})
     print('  login.auth ->', json.dumps(result, ensure_ascii=False))
+    assert result['ok'], result
+    assert any(z['zone'] == zone for z in result['zones']), result
+    # 选区：发令牌 + 分配该大区的 game 进程
+    result = login_client.call('login.enterZone', {'zone': zone})
+    print('  login.enterZone ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
     assert result.get('zone') == zone, result
     token, game_addr = result['token'], result['gameAddr']
@@ -164,8 +168,9 @@ def test_zone_isolation(account='zoner'):
 
     def enter(zone):
         c = GameClient().connect('127.0.0.1:11100')
-        r = c.call('login.auth',
-                   {'account': account, 'password': '123456', 'zone': zone})
+        r = c.call('login.auth', {'account': account, 'password': '123456'})
+        assert r['ok'], r
+        r = c.call('login.enterZone', {'zone': zone})
         assert r['ok'], r
         c.close()
         g = GameClient().connect(r['gameAddr'])

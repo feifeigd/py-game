@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 /// <summary>
 /// 通信协议：与服务端 engine/net/protocol.py 一致。
@@ -22,7 +23,13 @@ public class LoginAuthReq
 {
     public string account;
     public string password;
-    public string zone;      // 大区号，如 "1001"/"1002"
+}
+
+[Serializable]
+public class ZoneInfo
+{
+    public string zone;    // 大区号，如 "1001"
+    public string name;    // 展示名，如 "一区·风起云涌"
 }
 
 [Serializable]
@@ -31,9 +38,25 @@ public class LoginAuthRsp
     public bool ok;
     public string error;
     public string account;
+    public List<ZoneInfo> zones;   // 可选大区列表，玩家选区后调 login.enterZone
+}
+
+// ------------------------- 选区 -------------------------
+[Serializable]
+public class EnterZoneReq
+{
+    public string zone;
+}
+
+[Serializable]
+public class EnterZoneRsp
+{
+    public bool ok;
+    public string error;
+    public string account;
     public string zone;
     public string token;
-    public string gameAddr;   // 登录服分配的 game 进程地址 "host:port"
+    public string gameAddr;   // 该大区分配到的 game 进程地址 "host:port"
 }
 
 // ------------------------- 进入游戏 -------------------------

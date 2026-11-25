@@ -1,14 +1,14 @@
 """
 login 组登录服务
 
-客户端登录流程:
-    1. 客户端 TCP 连接 login 服务，发送 login.auth {account, password, zone}
-       zone 为大区号（如 "1001"/"1002"），缺省 "1001"
-    2. 校验账号（演示版：密码 123456 或 guest 开头免密）
-    3. 账号落 PG accounts 表（新号插入，老号只更新 login_count/last_login 两列）
-    4. 生成 token，跨组调用所选大区（game<zone>）的 world 进程登记令牌
-    5. 按账号哈希在该大区内分配一个 gameN 进程，把其客户端地址返回给客户端
-    6. 客户端拿 token 去连对应的 gameN 进程完成进入游戏
+客户端登录流程（两段式：先验账号，后选大区）:
+    1. 客户端 TCP 连接 login 服务，发送 login.auth {account, password}
+       -> 校验账号（演示版：密码 123456 或 guest 开头免密），落 PG accounts 表，
+          返回可选大区列表（此时不发令牌、不分配 game）
+    2. 玩家选定大区，发送 login.enterZone {zone}
+       -> 生成 token 并登记到该大区的 world，按账号哈希在大区内分配 gameN，
+          返回其客户端地址（只有 auth 成功的会话才能选区）
+    3. 客户端拿 token 去连对应的 gameN 进程完成进入游戏
 """
 import hashlib
 import uuid
@@ -19,9 +19,6 @@ from engine.context import CTX
 from engine.core.handler import handler
 from engine.net.server import ClientSession
 from engine.util import log
-
-DEFAULT_ZONE = '1001'
-
 
 def _pick_game_addr(account, zone):
     """按账号哈希把玩家分配到指定大区的某个 gameN 进程
@@ -77,34 +74,54 @@ async def _record_login(account):
 
 @handler('login.auth', public=True)
 async def auth(session, data):
+    """第一步：账号校验。成功返回可选大区列表，会话记入 session.account"""
     log.notice('login auth: %s', data)
     # 同 game.enter：只认真实客户端连接，防止集群内 RPC 伪造调用
-    # （否则会空跑落库和令牌登记，最后才在 session.account 处炸掉）
     if not isinstance(session, ClientSession):
         log.warning('login.auth rejected: not a client session (%r)', session)
         return {'ok': False, 'error': 'invalid session'}
     account = str(data.get('account', '')).strip()
     password = str(data.get('password', ''))
-    zone = str(data.get('zone') or DEFAULT_ZONE)
     if not account:
         return {'ok': False, 'error': 'account required'}
     # 演示版账号校验：真实项目在这里接账号平台 / SDK 验证
     if not (password == '123456' or account.startswith('guest')):
         return {'ok': False, 'error': 'bad password'}
 
+    await _record_login(account)
+    session.account = account
+
+    zones = [
+        {'zone': zone_id, 'name': zone_cfg.get('name', zone_id)}
+        for zone_id, zone_cfg in sorted(CTX.config.get('zones', {}).items())
+    ]
+    log.notice('auth success: %s, zones=%s', account, [z['zone'] for z in zones])
+    return {'ok': True, 'account': account, 'zones': zones}
+
+
+@handler('login.enterZone', public=True)
+async def enter_zone(session, data):
+    """第二步：选区。发令牌并登记到该大区 world，返回分配的 game 地址"""
+    if not isinstance(session, ClientSession):
+        log.warning('login.enterZone rejected: not a client session (%r)', session)
+        return {'ok': False, 'error': 'invalid session'}
+    account = session.account
+    if not account:
+        return {'ok': False, 'error': 'auth first'}
+    zone = str(data.get('zone') or '')
+    if not zone:
+        return {'ok': False, 'error': 'zone required'}
+
     picked = _pick_game_addr(account, zone)
     if picked is None:
         return {'ok': False, 'error': f'no game server in zone {zone}'}
     game_service, game_addrs = picked
 
-    await _record_login(account)
-
     token = uuid.uuid4().hex
     # 跨组调用所选大区的 world 进程登记令牌（cluster 名 = game<zone>）
     await api.call_cluster(f'game{zone}', 'world.prepareLogin', account, token)
 
-    session.account = account
-    log.notice('login success: %s zone=%s -> %s(%s)', account, zone,
+    log.notice('enter zone: %s zone=%s -> %s(%s)', account, zone,
                game_service, game_addrs)
     return {
         'ok': True,

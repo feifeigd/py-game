@@ -1,12 +1,13 @@
 /**
  * 游戏主流程：登录(login 组) -> 进入游戏(game 组) -> 聊天/充值推送。
  * 对应服务端的完整登录链路:
- *   login.auth(LoginAuthReq) -> LoginAuthRsp{token, gameWsAddr}
+ *   login.auth{account, password} -> LoginAuthRsp{zones}，玩家选区
+ *   login.enterZone{zone} -> EnterZoneRsp{token, gameWsAddr}
  *   连接 gameWsAddr -> game.enter{account, token} -> GameEnterRsp{player}
  */
 import { NetworkClient } from './Net/NetworkClient';
 import {
-    ChatPush, GameEnterRsp, KickPush, LevelUpPush,
+    ChatPush, EnterZoneRsp, GameEnterRsp, KickPush, LevelUpPush,
     LoginAuthRsp, OkRsp, PlayerInfo, RechargePush,
 } from './Net/Packet';
 import { Bootstrap } from './Bootstrap';
@@ -78,21 +79,33 @@ export class GameManager {
         };
     }
 
-    /** 第一步：连 login 服登录（选择大区），成功后自动连 game 服进入游戏 */
-    public login(account: string, password: string, zone = '1001', onError?: (err: string) => void): void {
+    /** 第一步：连 login 服验证账号，成功后展示大区列表供玩家选择 */
+    public login(account: string, password: string, onError?: (err: string) => void): void {
         NetworkClient.I.connect(this.loginAddr, () => {
             NetworkClient.I.call<LoginAuthRsp>('login.auth',
-                { account, password, zone },
+                { account, password },
                 rsp => {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'login failed'); return; }
                     this.account = rsp.account;
-                    this.zone = rsp.zone;
-                    this.token = rsp.token;
-                    console.log(`[Login] ok, zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
-                    this._enterGame(rsp.gameWsAddr, onError);
+                    console.log(`[Login] auth ok, zones=${rsp.zones.length}`);
+                    if (Bootstrap.I) Bootstrap.I.showZoneSelect(rsp.zones);
                 },
                 err => onError && onError(err));
         });
+    }
+
+    /** 第二步：玩家选定大区，发令牌并返回该大区的 game 地址 */
+    public enterZone(zone: string, onError?: (err: string) => void): void {
+        NetworkClient.I.call<EnterZoneRsp>('login.enterZone',
+            { zone },
+            rsp => {
+                if (!rsp.ok) { onError && onError(rsp.error ?? 'enter zone failed'); return; }
+                this.zone = rsp.zone;
+                this.token = rsp.token;
+                console.log(`[Login] enter zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
+                this._enterGame(rsp.gameWsAddr, onError);
+            },
+            err => onError && onError(err));
     }
 
     /** 第二步：拿 token 连 game 进程，进入游戏 */

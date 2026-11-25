@@ -4,7 +4,8 @@
 （服务端 `wsServer`，见 `engine/net/websocket.py`），实现了与 Unity 客户端相同的登录链路：
 
 ```
-连接 login(ws) -> login.auth 登录 -> 拿到 token 和 gameWsAddr
+连接 login(ws) -> login.auth 验证账号 -> 返回大区列表，玩家选区
+-> login.enterZone 拿 token 和 gameWsAddr
 -> 连接 game 进程(ws) -> game.enter 进入游戏 -> 聊天 / 收推送 / 充值到账
 ```
 
