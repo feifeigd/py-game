@@ -16,6 +16,7 @@ public class GameManager : MonoBehaviour
 
     public string Account { get; private set; }
     public string Token { get; private set; }
+    public string Zone { get; private set; }
     public PlayerInfo Player { get; private set; }
     public bool InGame { get; private set; }
 
@@ -55,19 +56,20 @@ public class GameManager : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    /// <summary>第一步：连 login 服登录，成功后自动连 game 服进入游戏</summary>
-    public void Login(string account, string password,
+    /// <summary>第一步：连 login 服登录（选择大区），成功后自动连 game 服进入游戏</summary>
+    public void Login(string account, string password, string zone = "1001",
                       System.Action<string> onError = null)
     {
         NetworkClient.I.Connect(loginHost, loginPort);
         NetworkClient.I.Call<LoginAuthRsp>("login.auth",
-            new LoginAuthReq { account = account, password = password },
+            new LoginAuthReq { account = account, password = password, zone = zone },
             rsp =>
             {
                 if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
                 Account = rsp.account;
+                Zone = rsp.zone;
                 Token = rsp.token;
-                Debug.Log($"[Login] ok, gameAddr={rsp.gameAddr}");
+                Debug.Log($"[Login] ok, zone={Zone}, gameAddr={rsp.gameAddr}");
                 EnterGame(rsp.gameAddr, onError);
             },
             err => onError?.Invoke(err));
@@ -87,7 +89,7 @@ public class GameManager : MonoBehaviour
                 InGame = true;
                 Bootstrap.I.ShowHud();
                 Bootstrap.I.SetStatus(
-                    $"进入游戏成功 [{Player.service}] {Player.name} Lv.{Player.level}");
+                    $"进入游戏成功 [大区{Zone} {Player.service}] {Player.name} Lv.{Player.level}");
                 RefreshHud();
             },
             err => onError?.Invoke(err));
@@ -111,7 +113,7 @@ public class GameManager : MonoBehaviour
     /// <summary>演示充值：直接调 recharge 组的 HTTP 回调（真实项目由支付平台发起）</summary>
     public void TestRecharge(int count)
     {
-        string url = $"http://127.0.0.1:41100/pay?account={Account}&item=diamond&count={count}";
+        string url = $"http://127.0.0.1:41100/pay?account={Account}&item=diamond&count={count}&zone={Zone}";
         StartCoroutine(GetUrl(url));
     }
 

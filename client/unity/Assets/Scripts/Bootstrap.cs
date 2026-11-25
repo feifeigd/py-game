@@ -19,6 +19,7 @@ public class Bootstrap : MonoBehaviour
     private GameObject _hudPanel;
     private InputField _accountInput;
     private InputField _passwordInput;
+    private InputField _zoneInput;
     private InputField _chatInput;
     private Text _statusText;
     private Text _infoText;
@@ -101,28 +102,34 @@ public class Bootstrap : MonoBehaviour
 
     private GameObject BuildLoginPanel(Transform parent)
     {
-        var panel = MakePanel(parent, "LoginPanel", new Vector2(0, 40), new Vector2(420, 320));
+        var panel = MakePanel(parent, "LoginPanel", new Vector2(0, 40), new Vector2(420, 360));
 
         MakeText(panel.transform, "Title", "登  录",
-            new Vector2(0, 110), new Vector2(400, 50), 28, TextAnchor.MiddleCenter);
+            new Vector2(0, 130), new Vector2(400, 50), 28, TextAnchor.MiddleCenter);
 
         MakeText(panel.transform, "AccountLabel", "账号",
-            new Vector2(-140, 50), new Vector2(60, 30), 18, TextAnchor.MiddleRight);
+            new Vector2(-140, 70), new Vector2(60, 30), 18, TextAnchor.MiddleRight);
         _accountInput = MakeInput(panel.transform, "AccountInput",
-            new Vector2(30, 50), new Vector2(220, 36), "tester");
+            new Vector2(30, 70), new Vector2(220, 36), "tester");
 
         MakeText(panel.transform, "PasswordLabel", "密码",
-            new Vector2(-140, 0), new Vector2(60, 30), 18, TextAnchor.MiddleRight);
+            new Vector2(-140, 20), new Vector2(60, 30), 18, TextAnchor.MiddleRight);
         _passwordInput = MakeInput(panel.transform, "PasswordInput",
-            new Vector2(30, 0), new Vector2(220, 36), "123456");
+            new Vector2(30, 20), new Vector2(220, 36), "123456");
         _passwordInput.contentType = InputField.ContentType.Password;
 
+        MakeText(panel.transform, "ZoneLabel", "大区",
+            new Vector2(-140, -30), new Vector2(60, 30), 18, TextAnchor.MiddleRight);
+        _zoneInput = MakeInput(panel.transform, "ZoneInput",
+            new Vector2(30, -30), new Vector2(220, 36), "1001");
+
         var btn = MakeButton(panel.transform, "LoginButton", "登 录",
-            new Vector2(0, -80), new Vector2(180, 44));
+            new Vector2(0, -110), new Vector2(180, 44));
         btn.onClick.AddListener(() =>
         {
             SetStatus("登录中...");
             GameManager.I.Login(_accountInput.text, _passwordInput.text,
+                _zoneInput.text,
                 err => SetStatus("登录失败: " + err));
         });
         return panel;

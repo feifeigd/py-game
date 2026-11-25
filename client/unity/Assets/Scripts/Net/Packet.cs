@@ -22,6 +22,7 @@ public class LoginAuthReq
 {
     public string account;
     public string password;
+    public string zone;      // 大区号，如 "1001"/"1002"
 }
 
 [Serializable]
@@ -30,6 +31,7 @@ public class LoginAuthRsp
     public bool ok;
     public string error;
     public string account;
+    public string zone;
     public string token;
     public string gameAddr;   // 登录服分配的 game 进程地址 "host:port"
 }

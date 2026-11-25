@@ -28,6 +28,7 @@ export class Bootstrap extends Component {
     private _hudPanel: Node = null as unknown as Node;
     private _accountInput: EditBox = null as unknown as EditBox;
     private _passwordInput: EditBox = null as unknown as EditBox;
+    private _zoneInput: EditBox = null as unknown as EditBox;
     private _chatInput: EditBox = null as unknown as EditBox;
     private _statusLabel: Label = null as unknown as Label;
     private _infoLabel: Label = null as unknown as Label;
@@ -92,23 +93,28 @@ export class Bootstrap extends Component {
     }
 
     private _buildLoginPanel(canvasNode: Node): Node {
-        const panel = this._makePanel(canvasNode, 'LoginPanel', 0, 40, 420, 320);
+        const panel = this._makePanel(canvasNode, 'LoginPanel', 0, 40, 420, 360);
 
-        this._makeLabel(panel, 'Title', '登  录', 0, 110, 400, 50, 28,
+        this._makeLabel(panel, 'Title', '登  录', 0, 130, 400, 50, 28,
             Label.HorizontalAlign.CENTER, Color.WHITE);
 
-        this._makeLabel(panel, 'AccountLabel', '账号', -140, 50, 60, 30, 18,
+        this._makeLabel(panel, 'AccountLabel', '账号', -140, 70, 60, 30, 18,
             Label.HorizontalAlign.RIGHT, Color.WHITE);
-        this._accountInput = this._makeInput(panel, 'AccountInput', 30, 50, 220, 36, 'tester');
+        this._accountInput = this._makeInput(panel, 'AccountInput', 30, 70, 220, 36, 'tester');
 
-        this._makeLabel(panel, 'PasswordLabel', '密码', -140, 0, 60, 30, 18,
+        this._makeLabel(panel, 'PasswordLabel', '密码', -140, 20, 60, 30, 18,
             Label.HorizontalAlign.RIGHT, Color.WHITE);
-        this._passwordInput = this._makeInput(panel, 'PasswordInput', 30, 0, 220, 36, '123456', true);
+        this._passwordInput = this._makeInput(panel, 'PasswordInput', 30, 20, 220, 36, '123456', true);
 
-        const btn = this._makeButton(panel, 'LoginButton', '登 录', 0, -80, 180, 44);
+        this._makeLabel(panel, 'ZoneLabel', '大区', -140, -30, 60, 30, 18,
+            Label.HorizontalAlign.RIGHT, Color.WHITE);
+        this._zoneInput = this._makeInput(panel, 'ZoneInput', 30, -30, 220, 36, '1001');
+
+        const btn = this._makeButton(panel, 'LoginButton', '登 录', 0, -110, 180, 44);
         btn.node.on(Button.EventType.CLICK, () => {
             this.setStatus('登录中...');
             GameManager.I.login(this._accountInput.string, this._passwordInput.string,
+                this._zoneInput.string,
                 err => this.setStatus('登录失败: ' + err));
         });
         return panel;

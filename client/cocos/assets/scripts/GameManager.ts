@@ -38,6 +38,7 @@ export class GameManager {
     public loginAddr = '127.0.0.1:11200';
 
     public account = '';
+    public zone = '';
     public token = '';
     public player: PlayerInfo | null = null;
     public inGame = false;
@@ -77,16 +78,17 @@ export class GameManager {
         };
     }
 
-    /** 第一步：连 login 服登录，成功后自动连 game 服进入游戏 */
-    public login(account: string, password: string, onError?: (err: string) => void): void {
+    /** 第一步：连 login 服登录（选择大区），成功后自动连 game 服进入游戏 */
+    public login(account: string, password: string, zone = '1001', onError?: (err: string) => void): void {
         NetworkClient.I.connect(this.loginAddr, () => {
             NetworkClient.I.call<LoginAuthRsp>('login.auth',
-                { account, password },
+                { account, password, zone },
                 rsp => {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'login failed'); return; }
                     this.account = rsp.account;
+                    this.zone = rsp.zone;
                     this.token = rsp.token;
-                    console.log(`[Login] ok, gameWsAddr=${rsp.gameWsAddr}`);
+                    console.log(`[Login] ok, zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
                     this._enterGame(rsp.gameWsAddr, onError);
                 },
                 err => onError && onError(err));
@@ -105,7 +107,7 @@ export class GameManager {
                     if (Bootstrap.I) {
                         Bootstrap.I.showHud();
                         Bootstrap.I.setStatus(
-                            `进入游戏成功 [${this.player.service}] ${this.player.name} Lv.${this.player.level}`);
+                            `进入游戏成功 [大区${this.zone} ${this.player.service}] ${this.player.name} Lv.${this.player.level}`);
                     }
                     this._refreshHud();
                 },
@@ -130,7 +132,7 @@ export class GameManager {
 
     /** 演示充值：直接调 recharge 组的 HTTP 回调（真实项目由支付平台发起） */
     public testRecharge(count: number): void {
-        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}`;
+        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}&zone=${this.zone}`;
         fetch(url)
             .then(r => r.text())
             .then(t => console.log('[Recharge]', t))

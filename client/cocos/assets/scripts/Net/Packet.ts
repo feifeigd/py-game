@@ -15,12 +15,14 @@ export interface Packet {
 export interface LoginAuthReq {
     account: string;
     password: string;
+    zone: string;      // 大区号，如 "1001"/"1002"
 }
 
 export interface LoginAuthRsp {
     ok: boolean;
     error?: string;
     account: string;
+    zone: string;
     token: string;
     gameAddr: string;    // game 进程 TCP 地址（Unity 等原生客户端用）
     gameWsAddr: string;  // game 进程 WebSocket 地址（本客户端用）
