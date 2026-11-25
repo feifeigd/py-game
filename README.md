@@ -38,6 +38,11 @@ center 组 MySQL / aiomysql）。
 - **actor 模型**：`engine.core.actor.Actor`，邮箱 + 串行消息循环。
   全局进程收敛一个 `WorldActor`；每个在线玩家在 gameN 进程是一个 `Player` actor，
   客户端 `player.*` 消息进入对应玩家邮箱串行处理。
+- **actor 粒度 = 数据属主（聚合根），而不是数据库表**。需要串行化的是
+  「同一行/同一文档」的读写：玩家档只被它的 Player actor 写，天然串行；
+  给每张表套一个 actor 只会引入队头阻塞、扩大故障半径，还与多进程分片拓扑冲突。
+  无天然属主的聚合（如公会、排行榜）也是按聚合根建 actor，而非按表。
+  单写者 per 表已由服务拓扑保证（orders 只有 recharge 写、online_stats 只有 CenterActor 写）。
 - **热更新**：`python tools/hotfix.py game all` —— 进程内 `importlib.reload` app 包全部模块，
   handler 注册表自动换新，存活 actor 的 `__class__` 重绑定到新类，状态不丢。
 
