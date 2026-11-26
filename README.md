@@ -86,35 +86,50 @@ docker compose up -d
 uv sync
 
 # 1. 启动四个进程组（各开一个终端；uv run 会自动向上找到项目根）
-#    game 组按大区多开：config_<大区号>.json，一个大区一套独立进程组 + 独立 Mongo 库
-cd game     && uv run python start.py config_1001.json   # 大区 1001
-cd game     && uv run python start.py config_1002.json   # 大区 1002
+#    game 组按服多开：config_<服号>.json，一个服一套独立进程组 + 独立 Mongo 库
+cd game     && uv run python start.py config_1001.json   # 服 1001
+cd game     && uv run python start.py config_1002.json   # 服 1002
 cd login    && uv run python start.py
 cd center   && uv run python start.py
 cd recharge && uv run python start.py
 # 也可以先激活虚拟环境再用裸 python: .venv\Scripts\activate
 
-# 2. 一键联调测试（自动起全部组（含两个大区）+ 全流程验证 + 热更新演示 + 大区隔离验证）
+# 2. 一键联调测试（自动起全部组（含两个服）+ 全流程验证 + 热更新演示 + 服隔离验证）
 uv run python tools/test_all.py
 
-# 3. 热更新（改了 game/app/ 下的代码后，不重启进程生效；第 4 个参数指定大区配置）
-python tools/hotfix.py game all app config_1001.json   # 大区 1001 所有服务
+# 3. 热更新（改了 game/app/ 下的代码后，不重启进程生效；第 4 个参数指定服配置）
+python tools/hotfix.py game all app config_1001.json   # 服 1001 所有服务
 python tools/hotfix.py game game1                      # 只热更默认配置的 game1
 
-# 4. 模拟充值（zone 参数指定大区，缺省 1001）
-curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&zone=1001"
+# 4. 模拟充值（server 参数指定服，缺省 1001）
+curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&server=1001"
 ```
 
-## 大区（多开）
+## 服（多开）
 
-- `game/config_<zone>.json`：一个文件 = 一个大区，`serverId` 决定 cluster 名（`game<zone>`），
-  端口段和 Mongo 库（`pygame_<zone>`）各自独立
-- 登录两段式选区：先 `login.auth {account, password}` 只验证账号，返回可选大区列表；
-  玩家选定后 `login.enterZone {zone}`，login 按 `zones.<zone>.gameServers` 把玩家分配到
-  该大区的 gameN，令牌也登记到对应大区的 world，返回该大区的 game 地址。
-  **只有一个大区时 `login.auth` 直接发令牌返回 game 地址**，客户端免去选区调用
-- 充值按 zone 路由到对应大区发货；center 按 cluster 名分开统计各区在线
-- 动态扩缩容按大区隔离：`python tools/cli.py game/config_1002.json start game3 game1`
+- `game/config_<server>.json`：一个文件 = 一个服（数据独立），`serverId` 决定
+  cluster 名（`game<server>`），端口段和 Mongo 库（`pygame_<server>`）各自独立
+- 登录两段式选服：先 `login.auth {account, password}` 只验证账号，返回可选服务器列表
+  （**来自 login 组的 `servers` 表**；status 0=维护/1=良好/2=拥挤/3=爆满/4=备用，
+  0 与 4 及未到开服时间的不展示，推荐服排前）；
+  玩家选定后 `login.enterServer {server}`（server = 展示服号 show_id），login 按
+  `servers.<real_id>.gameNodes` 把玩家分配到该服的 gameN，令牌也登记到对应服的 world，
+  返回该服的 game 地址。**只有一个服时 `login.auth` 直接发令牌返回 game 地址**，
+  客户端免去选服调用
+- 状态拦截：绕过列表直接 `enterServer` 隐藏服号（维护/备用/未开服）同样返回
+  `server unavailable`，且拦截在注册控制之前，`register_count` 不虚增
+  （专项测试：`tools/test_server_status.py`）
+- 选服列表数据驱动：login master 启动时把 config `servers` 段种子进 `servers` 表
+  （该 real_id 已有任何行就跳过，之后以表为准，GM 可直接改表上下架/推荐/限注册）；
+  config 只保留网络拓扑（`gameNodes` 地址，含动态扩容）
+- 合服：`show_id` 唯一（玩家选服标识），`real_id` 不唯一——插一行同 real_id、
+  不同 show_id 的记录即完成合服展示，玩家从任一展示口进入都路由到同一 game 组；
+  进服登记按 real_id 去重（换展示口不算新注册），`register_count` 按展示行分别统计
+- 注册控制：`account_servers` 表记录账号进过哪些服；新注册时爆满（status=3，
+  返回 `server busy`）或 `register_count >= max_register`（>0，返回 `server full`）
+  的服拒绝进入，老玩家回自己的服不受限
+- 充值按 server 路由到对应服发货；center 按 cluster 名分开统计各服在线
+- 动态扩缩容按服隔离：`python tools/cli.py game/config_1002.json start game3 game1`
   只会把 game3 加进 1002 的分配池
 
 ## 数据层（增量更新）
@@ -123,7 +138,9 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&zone=1001
   字段经 `DirtyRecord` 追踪，每 `dataSaveInterval` 秒只把**脏字段 $set** 回库，
   充值到账 / 下线 / 被踢时立即落库。
 - **login 组 → PostgreSQL**：`accounts` 表。老号登录只 UPDATE `login_count` /
-  `last_login` 两列。
+  `last_login` 两列。`servers` 表驱动选服列表与注册控制（show_id 展示服号 /
+  real_id 真实服号 / status / is_recommend / register_count / max_register），
+  `account_servers` 表记录账号进服登记。
 - **recharge 组 → PostgreSQL**：`orders` 表。回调先落单（pending），
   发货成功后只 UPDATE `status` / `delivered_at` 两列。
 - **center 组 → MySQL**：`online_stats` 表。在线人数变化才 upsert，
@@ -139,10 +156,10 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&zone=1001
 |---|---|---|---|
 | login | master | 11001 | clusterPort 11000 |
 | login | login | 11002 | 客户端 TCP 11100 |
-| game 大区1001 | master(world) | 21001 | clusterPort 21000 |
-| game 大区1001 | game1 / game2 | 21002 / 21003 | 客户端 TCP 21101 / 21102 |
-| game 大区1002 | master(world) | 22001 | clusterPort 22000 |
-| game 大区1002 | game1 / game2 | 22002 / 22003 | 客户端 TCP 22101 / 22102 |
+| game 服1001 | master(world) | 21001 | clusterPort 21000 |
+| game 服1001 | game1 / game2 | 21002 / 21003 | 客户端 TCP 21101 / 21102 |
+| game 服1002 | master(world) | 22001 | clusterPort 22000 |
+| game 服1002 | game1 / game2 | 22002 / 22003 | 客户端 TCP 22101 / 22102 |
 | center | master | 31001 | clusterPort 31000 |
 | recharge | master | 41001 | clusterPort 41000 |
 | recharge | recharge | 41002 | HTTP 41100 |
@@ -165,9 +182,9 @@ python tools/cli.py game stop game3          # 优雅缩容：踢人落库 -> �
 ## 登录链路（端到端）
 
 1. 客户端 TCP 连 login 服务（11100），发 `login.auth {account, password}` 验证账号，
-   返回可选大区列表 `zones`；**只有一个大区时直接顺路发令牌**，响应里带
-   `{zone, token, gameAddr}`，客户端跳到第 3 步
-2. 多个大区时玩家选定后发 `login.enterZone {zone}`：login 生成 token，**跨组调用**该大区
+   返回可选服务器列表 `servers`；**只有一个服时直接顺路发令牌**，响应里带
+   `{server, token, gameAddr}`，客户端跳到第 3 步
+2. 多个服时玩家选定后发 `login.enterServer {server}`：login 生成 token，**跨组调用**该服
    game 组全局进程 `world.prepareLogin` 登记令牌，按账号哈希分配 gameN 进程，
    返回 `{token, gameAddr}`
 3. 客户端连 gameAddr，发 `game.enter {account, token}`

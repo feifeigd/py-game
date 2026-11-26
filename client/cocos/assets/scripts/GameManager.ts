@@ -1,13 +1,13 @@
 /**
  * 游戏主流程：登录(login 组) -> 进入游戏(game 组) -> 聊天/充值推送。
  * 对应服务端的完整登录链路:
- *   login.auth{account, password} -> LoginAuthRsp{zones}，玩家选区
- *   login.enterZone{zone} -> EnterZoneRsp{token, gameWsAddr}
+ *   login.auth{account, password} -> LoginAuthRsp{servers}，玩家选服
+ *   login.enterServer{server} -> EnterServerRsp{token, gameWsAddr}
  *   连接 gameWsAddr -> game.enter{account, token} -> GameEnterRsp{player}
  */
 import { NetworkClient } from './Net/NetworkClient';
 import {
-    ChatPush, EnterZoneRsp, GameEnterRsp, KickPush, LevelUpPush,
+    ChatPush, EnterServerRsp, GameEnterRsp, KickPush, LevelUpPush,
     LoginAuthRsp, OkRsp, PlayerInfo, RechargePush,
 } from './Net/Packet';
 import { Bootstrap } from './Bootstrap';
@@ -39,7 +39,7 @@ export class GameManager {
     public loginAddr = '127.0.0.1:11200';
 
     public account = '';
-    public zone = '';
+    public server = '';
     public token = '';
     public player: PlayerInfo | null = null;
     public inGame = false;
@@ -79,7 +79,7 @@ export class GameManager {
         };
     }
 
-    /** 第一步：连 login 服验证账号，成功后展示大区列表供玩家选择 */
+    /** 第一步：连 login 服验证账号，成功后展示服务器列表供玩家选择 */
     public login(account: string, password: string, onError?: (err: string) => void): void {
         NetworkClient.I.connect(this.loginAddr, () => {
             NetworkClient.I.call<LoginAuthRsp>('login.auth',
@@ -87,30 +87,30 @@ export class GameManager {
                 rsp => {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'login failed'); return; }
                     this.account = rsp.account;
-                    console.log(`[Login] auth ok, zones=${rsp.zones.length}`);
+                    console.log(`[Login] auth ok, servers=${rsp.servers.length}`);
                     if (rsp.token) {
-                        // 单大区：服务端已直发令牌，免选区直接进游戏
-                        this.zone = rsp.zone!;
+                        // 单服：服务端已直发令牌，免选服直接进游戏
+                        this.server = rsp.server!;
                         this.token = rsp.token;
-                        console.log(`[Login] single zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
+                        console.log(`[Login] single server=${this.server}, gameWsAddr=${rsp.gameWsAddr}`);
                         this._enterGame(rsp.gameWsAddr!, onError);
                         return;
                     }
-                    if (Bootstrap.I) Bootstrap.I.showZoneSelect(rsp.zones);
+                    if (Bootstrap.I) Bootstrap.I.showServerSelect(rsp.servers);
                 },
                 err => onError && onError(err));
         });
     }
 
-    /** 第二步：玩家选定大区，发令牌并返回该大区的 game 地址 */
-    public enterZone(zone: string, onError?: (err: string) => void): void {
-        NetworkClient.I.call<EnterZoneRsp>('login.enterZone',
-            { zone },
+    /** 第二步：玩家选定服务器，发令牌并返回该服的 game 地址 */
+    public enterServer(server: string, onError?: (err: string) => void): void {
+        NetworkClient.I.call<EnterServerRsp>('login.enterServer',
+            { server },
             rsp => {
-                if (!rsp.ok) { onError && onError(rsp.error ?? 'enter zone failed'); return; }
-                this.zone = rsp.zone;
+                if (!rsp.ok) { onError && onError(rsp.error ?? 'enter server failed'); return; }
+                this.server = rsp.server;
                 this.token = rsp.token;
-                console.log(`[Login] enter zone=${this.zone}, gameWsAddr=${rsp.gameWsAddr}`);
+                console.log(`[Login] enter server=${this.server}, gameWsAddr=${rsp.gameWsAddr}`);
                 this._enterGame(rsp.gameWsAddr, onError);
             },
             err => onError && onError(err));
@@ -128,7 +128,7 @@ export class GameManager {
                     if (Bootstrap.I) {
                         Bootstrap.I.showHud();
                         Bootstrap.I.setStatus(
-                            `进入游戏成功 [大区${this.zone} ${this.player.service}] ${this.player.name} Lv.${this.player.level}`);
+                            `进入游戏成功 [服务器${this.server} ${this.player.service}] ${this.player.name} Lv.${this.player.level}`);
                     }
                     this._refreshHud();
                 },
@@ -153,7 +153,7 @@ export class GameManager {
 
     /** 演示充值：直接调 recharge 组的 HTTP 回调（真实项目由支付平台发起） */
     public testRecharge(count: number): void {
-        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}&zone=${this.zone}`;
+        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}&server=${this.server}`;
         fetch(url)
             .then(r => r.text())
             .then(t => console.log('[Recharge]', t))

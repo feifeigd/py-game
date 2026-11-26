@@ -17,33 +17,35 @@ export interface LoginAuthReq {
     password: string;
 }
 
-export interface ZoneInfo {
-    zone: string;    // 大区号，如 "1001"
-    name: string;    // 展示名，如 "一区·风起云涌"
+export interface ServerInfo {
+    server: string;    // 展示服号，如 "1001"
+    name: string;      // 展示名，如 "一区·风起云涌"
+    status: number;    // 服状态：0=维护 1=良好 2=拥挤 3=爆满 4=备用（0/4 服务端不下发）
+    recommend: boolean; // 是否推荐服
 }
 
 export interface LoginAuthRsp {
     ok: boolean;
     error?: string;
     account: string;
-    zones: ZoneInfo[];   // 可选大区列表，玩家选区后调 login.enterZone
-    // 只有一个大区时服务端直接发令牌，客户端免去 login.enterZone
-    zone?: string;
+    servers: ServerInfo[];   // 可选服务器列表，玩家选服后调 login.enterServer
+    // 只有一个服时服务端直接发令牌，客户端免去 login.enterServer
+    server?: string;
     token?: string;
     gameAddr?: string;
     gameWsAddr?: string;
 }
 
-// ------------------------- 选区 -------------------------
-export interface EnterZoneReq {
-    zone: string;
+// ------------------------- 选服 -------------------------
+export interface EnterServerReq {
+    server: string;
 }
 
-export interface EnterZoneRsp {
+export interface EnterServerRsp {
     ok: boolean;
     error?: string;
     account: string;
-    zone: string;
+    server: string;
     token: string;
     gameAddr: string;    // game 进程 TCP 地址（Unity 等原生客户端用）
     gameWsAddr: string;  // game 进程 WebSocket 地址（本客户端用）

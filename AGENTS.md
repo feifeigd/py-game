@@ -27,7 +27,7 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 - actor 消息方法 camelCase 自动转 snake_case: `player.getInfo` -> `do_get_info`
 - 热更新安全: `app` 包模块级状态必须写 `if 'x' not in globals():` 守卫（reload 复用模块 `__dict__`，不守卫会丢状态），参照 `game/app/world.py`
 - 只有 master 服务持有 cluster 连接；普通服务跨组调用用 `api.call_cluster`，自动经 master 转发
-- 跨进程给 actor 发消息用 `api.actor_ref('player:账号', service='game1').tell/ask`（actor 侧 `bind('player:'+account)` 注册寻址名，停止自动解绑；跨组加 `cluster=` 参数）；不要再手写 handler + 查表转发
+- 跨进程给 actor 发消息用 `api.actor_ref('player:role_id', service='game1').tell/ask`（actor 侧 `bind('player:'+role)` 注册寻址名，停止自动解绑；跨组加 `cluster=` 参数）；不要再手写 handler + 查表转发
 
 ## Known pitfalls
 
@@ -39,3 +39,10 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 ## 编码约定（项目级，bmad 块外持久保存）
 
 - 字符串格式化一律用 f-string，不用 `%` 或 `str.format`（包括 log 调用——`engine/util/log.py` 的封装本来就是立即格式化，用 `%s` 占不到惰性求值的便宜）。存量代码改动到某行时顺手迁移，不做全量重写
+
+## 多角色模型（2026-11 起，bmad 块外持久保存）
+
+- 一个账号在一个服可有多个角色（合服场景）：身份一律用 `role_id`（player 档主键、actor 寻址名 `player:<role_id>`、world 位置表/离线充值的键），`account` 只用于展示和按号查角色列表（`world.listRoles`）
+- 客户端链路：`login.auth` -> `login.enterServer`（0/1 角色直发令牌，多角色返回 roles）-> `login.enterRole`（role="" 新建角色）-> `game.enter {account, role, token}`
+- 充值按角色发货：`/pay` 带 `role` 参数；多角色账号缺省 role 会被拒（`role required`）
+- 服状态枚举在 `login/app/const.py` 的 `ServerStatus`（0=维护/1=良好/2=拥挤/3=爆满/4=备用），业务代码不要写 status 数字

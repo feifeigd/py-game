@@ -13,7 +13,7 @@ import {
     EditBox, Graphics, Label, Layers, Node, UITransform,
 } from 'cc';
 import { GameManager } from './GameManager';
-import { ZoneInfo } from './Net/Packet';
+import { ServerInfo } from './Net/Packet';
 
 const { ccclass } = _decorator;
 
@@ -30,7 +30,7 @@ export class Bootstrap extends Component {
     private _accountInput: EditBox = null as unknown as EditBox;
     private _passwordInput: EditBox = null as unknown as EditBox;
     private _chatInput: EditBox = null as unknown as EditBox;
-    private _zonePanel: Node | null = null;
+    private _serverPanel: Node | null = null;
     private _statusLabel: Label = null as unknown as Label;
     private _infoLabel: Label = null as unknown as Label;
     private _chatLabel: Label = null as unknown as Label;
@@ -51,31 +51,34 @@ export class Bootstrap extends Component {
     public showLogin(): void {
         this._loginPanel.active = true;
         this._hudPanel.active = false;
-        if (this._zonePanel) this._zonePanel.active = false;
+        if (this._serverPanel) this._serverPanel.active = false;
     }
 
     public showHud(): void {
         this._loginPanel.active = false;
         this._hudPanel.active = true;
-        if (this._zonePanel) this._zonePanel.active = false;
+        if (this._serverPanel) this._serverPanel.active = false;
     }
 
-    /** 账号验证通过后展示大区列表，玩家选区后调 login.enterZone */
-    public showZoneSelect(zones: ZoneInfo[]): void {
+    /** 账号验证通过后展示服务器列表，玩家选服后调 login.enterServer */
+    public showServerSelect(servers: ServerInfo[]): void {
         this._loginPanel.active = false;
-        if (this._zonePanel) this._zonePanel.destroy();
-        const panel = this._makePanel(this._loginPanel.parent!, 'ZonePanel',
-            0, 40, 460, 160 + zones.length * 70);
-        this._zonePanel = panel;
-        this._makeLabel(panel, 'Title', '选择大区', 0, 60 + zones.length * 35, 400, 40, 24,
+        if (this._serverPanel) this._serverPanel.destroy();
+        const panel = this._makePanel(this._loginPanel.parent!, 'ServerPanel',
+            0, 40, 460, 160 + servers.length * 70);
+        this._serverPanel = panel;
+        this._makeLabel(panel, 'Title', '选择服务器', 0, 60 + servers.length * 35, 400, 40, 24,
             Label.HorizontalAlign.CENTER, Color.WHITE);
-        zones.forEach((info, i) => {
-            const btn = this._makeButton(panel, `Zone${info.zone}`,
-                `${info.name}（${info.zone}）`, 0, 30 + (zones.length - 1 - i) * 70, 300, 52);
+        servers.forEach((info, i) => {
+            const tag = info.recommend ? '·推荐'
+                : info.status === 2 ? '·拥挤'
+                : info.status === 3 ? '·爆满' : '';
+            const btn = this._makeButton(panel, `Server${info.server}`,
+                `${info.name}（${info.server}）${tag}`, 0, 30 + (servers.length - 1 - i) * 70, 300, 52);
             btn.node.on(Button.EventType.CLICK, () => {
-                this.setStatus(`进入大区 ${info.zone}...`);
-                GameManager.I.enterZone(info.zone,
-                    err => this.setStatus(`进入大区失败: ${err}`));
+                this.setStatus(`进入服务器 ${info.server}...`);
+                GameManager.I.enterServer(info.server,
+                    err => this.setStatus(`进入服务器失败: ${err}`));
             });
         });
     }

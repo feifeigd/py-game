@@ -17,7 +17,7 @@ public class Bootstrap : MonoBehaviour
 
     private Font _font;
     private GameObject _loginPanel;
-    private GameObject _zonePanel;
+    private GameObject _serverPanel;
     private GameObject _hudPanel;
     private InputField _accountInput;
     private InputField _passwordInput;
@@ -51,23 +51,23 @@ public class Bootstrap : MonoBehaviour
     public void ShowLogin()
     {
         _loginPanel.SetActive(true);
-        if (_zonePanel != null) _zonePanel.SetActive(false);
+        if (_serverPanel != null) _serverPanel.SetActive(false);
         _hudPanel.SetActive(false);
     }
 
-    /// <summary>登录成功后展示大区列表（动态构建，大区来自服务端）</summary>
-    public void ShowZoneSelect(List<ZoneInfo> zones)
+    /// <summary>登录成功后展示服务器列表（动态构建，服务器来自服务端）</summary>
+    public void ShowServerSelect(List<ServerInfo> servers)
     {
         _loginPanel.SetActive(false);
         _hudPanel.SetActive(false);
-        if (_zonePanel != null) Destroy(_zonePanel);
-        _zonePanel = BuildZonePanel(_loginPanel.transform.parent, zones);
+        if (_serverPanel != null) Destroy(_serverPanel);
+        _serverPanel = BuildServerPanel(_loginPanel.transform.parent, servers);
     }
 
     public void ShowHud()
     {
         _loginPanel.SetActive(false);
-        if (_zonePanel != null) _zonePanel.SetActive(false);
+        if (_serverPanel != null) _serverPanel.SetActive(false);
         _hudPanel.SetActive(true);
     }
 
@@ -141,28 +141,31 @@ public class Bootstrap : MonoBehaviour
         return panel;
     }
 
-    /// <summary>大区选择面板：每个大区一个按钮，点击后调 login.enterZone</summary>
-    private GameObject BuildZonePanel(Transform parent, List<ZoneInfo> zones)
+    /// <summary>服务器选择面板：每个服一个按钮，点击后调 login.enterServer</summary>
+    private GameObject BuildServerPanel(Transform parent, List<ServerInfo> servers)
     {
-        int height = 160 + zones.Count * 70;
-        var panel = MakePanel(parent, "ZonePanel", new Vector2(0, 40),
+        int height = 160 + servers.Count * 70;
+        var panel = MakePanel(parent, "ServerPanel", new Vector2(0, 40),
             new Vector2(460, height));
 
-        MakeText(panel.transform, "ZoneTitle", "选择大区",
+        MakeText(panel.transform, "ServerTitle", "选择服务器",
             new Vector2(0, height / 2 - 50), new Vector2(400, 50), 26,
             TextAnchor.MiddleCenter);
 
-        for (int i = 0; i < zones.Count; i++)
+        for (int i = 0; i < servers.Count; i++)
         {
-            var info = zones[i];
-            var btn = MakeButton(panel.transform, $"Zone{i}",
-                $"{info.name}（{info.zone}）",
+            var info = servers[i];
+            string tag = info.recommend ? "·推荐"
+                : info.status == 2 ? "·拥挤"
+                : info.status == 3 ? "·爆满" : "";
+            var btn = MakeButton(panel.transform, $"Server{i}",
+                $"{info.name}（{info.server}）{tag}",
                 new Vector2(0, height / 2 - 130 - i * 70), new Vector2(300, 52));
             btn.onClick.AddListener(() =>
             {
                 SetStatus($"进入 {info.name}...");
-                GameManager.I.EnterZone(info.zone,
-                    err => SetStatus("进入大区失败: " + err));
+                GameManager.I.EnterServer(info.server,
+                    err => SetStatus("进入服务器失败: " + err));
             });
         }
         return panel;

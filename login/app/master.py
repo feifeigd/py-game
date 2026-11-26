@@ -1,4 +1,5 @@
 """login 组 master 服务（组内协调 + 跨组转发 + 库表结构初始化）"""
+from app.const import ServerStatus
 from engine import db
 from engine.context import CTX
 from engine.core.handler import handler
@@ -15,11 +16,54 @@ async def init():
             created_at  TIMESTAMPTZ NOT NULL,
             last_login  TIMESTAMPTZ NOT NULL
         )''')
+    # 服务器表（滚服模式，每个 game 进程组 = 一个数据独立的服务器）:
+    # show_id 展示给玩家看的服号（玩家按它选服，必须唯一）,
+    # real_id 真实服号（对应 cluster 名 game1001 -> 1001，同时是 config servers 段的键；
+    #   不唯一——合服时多个展示行指向同一个真实服，数据落在同一 game 组）,
+    # status 服状态（枚举见 app/const.py 的 ServerStatus，0/4 不对外展示）,
+    # is_recommend 是否推荐服, start_time 开服时间（未到不展示）,
+    # register_count/max_register 注册人数控制（按行统计，max_register=0 不限）
+    await db.get().execute('''
+        CREATE TABLE IF NOT EXISTS servers (
+            id             BIGSERIAL PRIMARY KEY,
+            show_id        TEXT        NOT NULL,
+            name           TEXT        NOT NULL,
+            status         INTEGER     NOT NULL DEFAULT 0,
+            is_recommend   BOOLEAN     NOT NULL DEFAULT FALSE,
+            real_id        TEXT        NOT NULL,
+            start_time     TIMESTAMPTZ,
+            register_count INTEGER     NOT NULL DEFAULT 0,
+            max_register   INTEGER     NOT NULL DEFAULT 0
+        )''')
+    # 老库迁移: real_id 误建的唯一索引去掉（合服需要同 real_id 多行），
+    # 唯一性改到 show_id（玩家选服的标识）
+    await db.get().execute('DROP INDEX IF EXISTS servers_real_id_uidx')
+    await db.get().execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS servers_show_id_uidx ON servers (show_id)')
+    # 账号进服登记: 一个账号在一个真实服只算一次注册（register_count 的事实来源；
+    # 合服后从任一展示口进来都算同一个服）
+    await db.get().execute('''
+        CREATE TABLE IF NOT EXISTS account_servers (
+            account    TEXT        NOT NULL,
+            real_id    TEXT        NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (account, real_id)
+        )''')
+    # 种子: 把 config 静态配置里的服灌进表（该 real_id 已有任何行就跳过，
+    # GM 改表 / 加合服行不会被覆盖）
+    gdb = db.get()
+    for real_id, cfg in sorted(CTX.config.get('servers', {}).items()):
+        await gdb.execute('''
+            INSERT INTO servers (show_id, name, status, is_recommend, real_id, start_time)
+            SELECT $1, $2, $4, FALSE, $3, now()
+            WHERE NOT EXISTS (SELECT 1 FROM servers WHERE real_id = $3)''',
+            real_id, cfg.get('name', real_id), real_id,
+            int(ServerStatus.GOOD))
     log.notice('login master inited')
 
 
-def _zone_of_cluster(group):
-    """cluster 名 -> 大区号: 'game1001' -> '1001'，'game'（无 serverId）-> 默认 1001"""
+def _server_of_cluster(group):
+    """cluster 名 -> 服号: 'game1001' -> '1001'，'game'（无 serverId）-> 默认 1001"""
     if not group.startswith('game'):
         return None
     return group[len('game'):] or '1001'
@@ -27,19 +71,19 @@ def _zone_of_cluster(group):
 
 @handler('sys.serviceUp')
 def on_service_up(group, service, addrs):
-    """game 大区扩容通知 -> 转发给 login 服务更新对应大区的分配池"""
-    zone = _zone_of_cluster(group)
-    if zone is None:
+    """game 服扩容通知 -> 转发给 login 服务更新对应服的分配池"""
+    server = _server_of_cluster(group)
+    if server is None:
         return
     log.notice(f'game service up: {group} {service} {addrs}')
-    CTX.internal.send('login', 'login.serviceUp', zone, service, addrs)
+    CTX.internal.send('login', 'login.serviceUp', server, service, addrs)
 
 
 @handler('sys.serviceDown')
 def on_service_down(group, service):
-    """game 大区缩容通知 -> 转发给 login 服务把节点移出对应大区的分配池"""
-    zone = _zone_of_cluster(group)
-    if zone is None:
+    """game 服缩容通知 -> 转发给 login 服务把节点移出对应服的分配池"""
+    server = _server_of_cluster(group)
+    if server is None:
         return
     log.notice(f'game service down: {group} {service}')
-    CTX.internal.send('login', 'login.serviceDown', zone, service)
+    CTX.internal.send('login', 'login.serviceDown', server, service)

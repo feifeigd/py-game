@@ -24,6 +24,27 @@ class MongoDB:
         """按主键读文档，不存在返回 None"""
         return await self._db[coll].find_one({key_field: key}, {'_id': 0})
 
+    async def find(self, coll, query, fields=None):
+        """多行查询（不含 _id）; fields 给定时只取这些列"""
+        projection = {'_id': 0}
+        if fields:
+            projection.update((f, 1) for f in fields)
+        return await self._db[coll].find(query, projection).to_list(None)
+
+    async def find_with_id(self, coll, query):
+        """含 _id 的多行查询（数据迁移等需要定位原文档的场景）"""
+        return await self._db[coll].find(query).to_list(None)
+
+    async def update_by_id(self, coll, doc_id, data):
+        """按 _id $set 更新（数据迁移用）"""
+        await self._db[coll].update_one({'_id': doc_id}, {'$set': data})
+
+    async def count(self, coll, query):
+        return await self._db[coll].count_documents(query)
+
+    async def create_index(self, coll, *keys):
+        await self._db[coll].create_index(list(keys))
+
     async def save(self, coll, key_field, key, record, is_new=False):
         """增量落库: 只写脏字段; is_new 或脏为空时的整档兜底写全量
 

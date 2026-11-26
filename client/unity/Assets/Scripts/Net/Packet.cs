@@ -26,10 +26,12 @@ public class LoginAuthReq
 }
 
 [Serializable]
-public class ZoneInfo
+public class ServerInfo
 {
-    public string zone;    // 大区号，如 "1001"
+    public string server;  // 展示服号，如 "1001"
     public string name;    // 展示名，如 "一区·风起云涌"
+    public int status;     // 服状态：0=维护 1=良好 2=拥挤 3=爆满 4=备用（0/4 服务端不下发）
+    public bool recommend; // 是否推荐服
 }
 
 [Serializable]
@@ -38,29 +40,29 @@ public class LoginAuthRsp
     public bool ok;
     public string error;
     public string account;
-    public List<ZoneInfo> zones;   // 可选大区列表，玩家选区后调 login.enterZone
-    // 只有一个大区时服务端直接发令牌，客户端免去 login.enterZone
-    public string zone;
+    public List<ServerInfo> servers;   // 可选服务器列表，玩家选服后调 login.enterServer
+    // 只有一个服时服务端直接发令牌，客户端免去 login.enterServer
+    public string server;
     public string token;
     public string gameAddr;
 }
 
-// ------------------------- 选区 -------------------------
+// ------------------------- 选服 -------------------------
 [Serializable]
-public class EnterZoneReq
+public class EnterServerReq
 {
-    public string zone;
+    public string server;
 }
 
 [Serializable]
-public class EnterZoneRsp
+public class EnterServerRsp
 {
     public bool ok;
     public string error;
     public string account;
-    public string zone;
+    public string server;
     public string token;
-    public string gameAddr;   // 该大区分配到的 game 进程地址 "host:port"
+    public string gameAddr;   // 该服分配到的 game 进程地址 "host:port"
 }
 
 // ------------------------- 进入游戏 -------------------------

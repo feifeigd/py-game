@@ -50,7 +50,7 @@ class ClusterCli:
 
     def __init__(self, group):
         # group = center|game|login|recharge, 就是ROOT子文件夹的名字；
-        # 多开大区的组用 "game/config_1002.json" 指定非默认配置
+        # 多开服的组用 "game/config_1002.json" 指定非默认配置
         if '/' in group or '\\' in group:
             group, config_name = group.replace('\\', '/').split('/', 1)
         else:

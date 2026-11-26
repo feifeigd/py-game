@@ -86,7 +86,7 @@ class WorldActor(Actor):
         return self.chat_count
 
     async def do_report_center(self):
-        """向 center 组上报在线人数（按 cluster 名区分大区，如 game1001）"""
+        """向 center 组上报在线人数（按 cluster 名区分服，如 game1001）"""
         online = len(self.player_locations)
         try:
             await api.call_cluster('center', 'center.reportOnline',

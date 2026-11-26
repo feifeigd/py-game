@@ -1,23 +1,30 @@
 """
 game 组单人进程（game1 / game2，玩家进程）
 
-每个登录成功的玩家在本进程创建一个 Player actor:
-  - 客户端发来的 player.* 消息进入该玩家的 actor 邮箱串行处理
-  - 玩家的所有状态都在 actor 内，无并发冲突
+每个登录成功的角色在本进程创建一个 Player actor:
+  - 客户端发来的 player.* 消息进入该角色的 actor 邮箱串行处理
+  - 角色的所有状态都在 actor 内，无并发冲突
   - 掉线 / 被顶号时 actor 收到 __logout__ 消息做清理
 
+多角色模型: 一个账号在一个服可有多个角色（合服后常见）。
+身份一律用 role_id（player 档主键，actor 寻址名 player:<role_id>），
+account 只用于展示与按号查角色列表。同账号的不同角色可同时在线。
+
 数据持久化（MongoDB，增量更新）:
-  - 进入游戏时从 Mongo 加载角色档，新号建档
+  - 进入游戏时按 role_id 加载角色档，role='' 时新建档
   - 角色字段放在 DirtyRecord 里，顶层赋值即标脏
   - 每 dataSaveInterval 秒把脏字段 $set 回库，下线时兜底落一次
 
 本进程对客户端暴露 tcpServer（见 config.json），客户端消息:
-    game.enter      进入游戏（验证令牌）
+    game.enter      进入游戏（验证令牌，role='' 新建角色）
     player.chat     聊天
     player.getInfo  查询角色信息
 """
 import asyncio
 
+from bson import ObjectId
+
+from app.const import COLL_PLAYER
 from engine import api, db
 from engine.context import CTX
 from engine.core.actor import Actor
@@ -25,9 +32,7 @@ from engine.core.handler import handler
 from engine.net.server import ClientSession
 from engine.util import log
 
-COLL_PLAYER = 'player'  # mongo 集合名
-
-# 新号默认角色档
+# 新角色默认档
 DEFAULT_DATA = {
     'name': '',
     'level': 1,
@@ -37,11 +42,12 @@ DEFAULT_DATA = {
 
 
 class Player(Actor):
-    """玩家 actor：一个在线玩家一个实例"""
+    """玩家 actor：一个在线角色一个实例"""
 
-    def __init__(self, account, session, doc, is_new):
+    def __init__(self, account, role, session, doc, is_new):
         super().__init__()
         self.account = account
+        self.role = role
         self.session = session
         self._is_new = is_new
         # 角色数据走 DirtyRecord: 顶层字段赋值即标脏，增量落库
@@ -83,11 +89,11 @@ class Player(Actor):
         """把脏字段增量写回 Mongo; force=True 无视脏标记整档覆盖"""
         if not force and not self._is_new and not self.data.is_dirty:
             return 0
-        n = await db.get().save(COLL_PLAYER, 'account', self.account,
+        n = await db.get().save(COLL_PLAYER, 'role', self.role,
                                 self.data, is_new=self._is_new or force)
         self._is_new = False
         if n:
-            log.info('player %s saved, %d fields', self.account, n)
+            log.info('role %s saved, %d fields', self.role, n)
         return n
 
     async def do_save(self):
@@ -99,8 +105,8 @@ class Player(Actor):
     # ---------------------------------------------------------------
     async def do_chat(self, data):
         text = str(data.get('text', ''))[:200]
-        log.info('[%s] %s chat: %s', CTX.service_name, self.account, text)
-        # 经全局进程做全服跑马灯广播
+        log.info('[%s] %s(%s) chat: %s', CTX.service_name, self.name, self.role, text)
+        # 经全局进程做全服跑马灯广播（展示用角色名）
         api.send_service('master', 'world.chatMarquee',
                          self.account, text, CTX.service_name)
         return {'ok': True}
@@ -108,6 +114,7 @@ class Player(Actor):
     async def do_get_info(self, data):
         return {
             'account': self.account,
+            'role': self.role,
             'name': self.data.name,
             'level': self.data.level,
             'exp': self.data.exp,
@@ -130,8 +137,8 @@ class Player(Actor):
         """充值到账"""
         if item == 'diamond':
             self.diamond += int(count)
-        log.notice('player %s recharge %s x%s, diamond=%d',
-                   self.account, item, count, self.diamond)
+        log.notice('role %s recharge %s x%s, diamond=%d',
+                   self.role, item, count, self.diamond)
         # 充值是钱，立刻落库不等周期
         await self.save()
         await self.session.push('recharge.push',
@@ -145,25 +152,35 @@ class Player(Actor):
     async def do___logout__(self):
         """连接断开清理（do_ + __logout__），下线前兜底落库"""
         await self.save()
-        logout(self.account, self)
+        logout(self.role, self)
 
     def on_hotfix(self):
         # 引擎只重绑 Player 自己的类；若持有嵌套业务对象（如 self.abc = Abc()），
         # 它的类不会自动更新，需在此手动重绑: self.rebind_fields('abc')
-        log.info(f'player {self.account} hotfixed (class rebound)')
+        log.info(f'role {self.role} hotfixed (class rebound)')
 
 
 # 热更新安全：reload 复用模块 __dict__，保住在线玩家表
 if '_players' not in globals():
-    _players = {}  # account -> Player
+    _players = {}  # role -> Player
 
 
-def logout(account, player):
-    if _players.get(account) is player:
-        del _players[account]
+def logout(role, player):
+    if _players.get(role) is player:
+        del _players[role]
     player.stop()
-    api.send_service('master', 'world.playerLogout', account, CTX.service_name)
-    log.notice('player %s logout from %s', account, CTX.service_name)
+    api.send_service('master', 'world.playerLogout', role, CTX.service_name)
+    log.notice('role %s logout from %s', role, CTX.service_name)
+
+
+async def _new_role_doc(account):
+    """新建角色档: 首个角色叫 勇者_<account>，之后依次带序号"""
+    count = await db.get().count(COLL_PLAYER, {'account': account})
+    name = f'勇者_{account}' if count == 0 else f'勇者_{account}{count + 1}'
+    doc = dict(DEFAULT_DATA)
+    doc['account'] = account
+    doc['name'] = name
+    return doc
 
 
 # ---------------------------------------------------------------------
@@ -171,38 +188,47 @@ def logout(account, player):
 # ---------------------------------------------------------------------
 @handler('game.enter', public=True)
 async def enter(session: ClientSession, data):
-    """客户端进入游戏：验证令牌 -> 加载角色档 -> 创建玩家 actor"""
+    """客户端进入游戏：验证令牌 -> 加载/新建角色档 -> 创建玩家 actor
+
+    data: {account, role, token}；role='' 表示在本服新建一个角色
+    """
     # 只认真实客户端连接：集群内 RPC 的参数走 JSON，伪造不出 ClientSession，
     # 不拦的话会在 session.player 赋值处炸掉，还留下绑定过的幽灵玩家 actor
     if not isinstance(session, ClientSession):
         log.warning('game.enter rejected: not a client session (%r)', session)
         return {'ok': False, 'error': 'invalid session'}
     account = str(data.get('account', ''))
+    role = str(data.get('role', ''))
     token = str(data.get('token', ''))
     if not account or not token:
         return {'ok': False, 'error': 'account/token required'}
 
     result = await api.call_service(
-        'master', 'world.verifyToken', account, token, CTX.service_name)
+        'master', 'world.verifyToken', account, role, token, CTX.service_name)
     if not result.get('ok'):
         return {'ok': False, 'error': result.get('error', 'verify failed')}
 
-    # 已在的（同进程重进）先清掉
-    old = _players.get(account)
+    if role:
+        # 已有角色：加载档位，且必须属于本账号（防止拿别人的 role_id 进号）
+        doc = await db.get().load(COLL_PLAYER, 'role', role)
+        if doc is None or doc.get('account') != account:
+            return {'ok': False, 'error': 'role not found'}
+        is_new = False
+    else:
+        role = str(ObjectId())
+        doc = await _new_role_doc(account)
+        is_new = True
+
+    # 已在的（同进程同角色重进）先清掉
+    old = _players.get(role)
     if old is not None:
         old.tell('kick', 'reenter')
 
-    # 从 Mongo 加载角色档，新号按默认档建档
-    doc = await db.get().load(COLL_PLAYER, 'account', account)
-    is_new = doc is None
-    if is_new:
-        doc = dict(DEFAULT_DATA)
-        doc['name'] = f'勇者_{account}'
-    doc.pop('account', None)  # account 是主键，不进 DirtyRecord
+    doc.pop('role', None)  # role 是主键，不进 DirtyRecord
 
     # bind 后本进程内可经 api.actor_ref 寻址，跨进程走 sys.tellActor/sys.askActor
-    player = Player(account, session, doc, is_new).bind('player:' + account).start()
-    _players[account] = player
+    player = Player(account, role, session, doc, is_new).bind('player:' + role).start()
+    _players[role] = player
     session.player = player
     session.account = account
     log.notice('player %s enter %s (%s)', account, CTX.service_name,

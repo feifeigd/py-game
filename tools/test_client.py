@@ -93,24 +93,24 @@ def http_get(url):
         return resp.read().decode('utf-8')
 
 
-def full_flow(account='tester', password='123456', zone='1001'):
-    """完整流程: 登录（auth）-> 选大区（enterZone）-> 进游戏 -> 聊天 -> 查信息 -> 充值"""
-    print(f'== 1. 连接 login 服务器登录账号，再选大区 {zone} ==')
+def full_flow(account='tester', password='123456', server='1001'):
+    """完整流程: 登录（auth）-> 选服（enterServer）-> 进游戏 -> 聊天 -> 查信息 -> 充值"""
+    print(f'== 1. 连接 login 服务器登录账号，再选服 {server} ==')
     login_client = GameClient().connect('127.0.0.1:11100')
     result = login_client.call('login.auth', {'account': account, 'password': password})
     print('  login.auth ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
-    assert any(z['zone'] == zone for z in result['zones']), result
+    assert any(s['server'] == server for s in result['servers']), result
     if result.get('token'):
-        # 只有一个大区：auth 已直接发令牌，免去 login.enterZone
-        print(f'  单大区直发令牌: zone={result["zone"]} gameAddr={result["gameAddr"]}')
-        assert result['zone'] == zone, result
+        # 只有一个服：auth 已直接发令牌，免去 login.enterServer
+        print(f'  单服直发令牌: server={result["server"]} gameAddr={result["gameAddr"]}')
+        assert result['server'] == server, result
     else:
-        # 选区：发令牌 + 分配该大区的 game 进程
-        result = login_client.call('login.enterZone', {'zone': zone})
-        print('  login.enterZone ->', json.dumps(result, ensure_ascii=False))
+        # 选服：发令牌 + 分配该服的 game 进程
+        result = login_client.call('login.enterServer', {'server': server})
+        print('  login.enterServer ->', json.dumps(result, ensure_ascii=False))
         assert result['ok'], result
-        assert result.get('zone') == zone, result
+        assert result.get('server') == server, result
     token, game_addr = result['token'], result['gameAddr']
     login_client.close()
 
@@ -147,9 +147,9 @@ def full_flow(account='tester', password='123456', zone='1001'):
     result = game.call('player.getInfo', {})
     print('  player.getInfo ->', json.dumps(result, ensure_ascii=False))
 
-    print('== 5. 充值（HTTP 回调 -> recharge 组 -> 大区 world -> 玩家 actor）==')
+    print('== 5. 充值（HTTP 回调 -> recharge 组 -> 服 world -> 玩家 actor）==')
     before = result['diamond']
-    resp = http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&zone={zone}')
+    resp = http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&server={server}')
     print('  /pay ->', resp)
 
     import time
@@ -163,20 +163,20 @@ def full_flow(account='tester', password='123456', zone='1001'):
     assert 'recharge.push' in pushes
     assert 'chat.push' in pushes
     game.close()
-    print(f'== 大区 {zone} 全流程测试通过 ==')
+    print(f'== 服 {server} 全流程测试通过 ==')
     return True
 
 
-def test_zone_isolation(account='zoner'):
-    """大区数据隔离: 同一账号在两个大区是两个独立角色（各自 Mongo 库）"""
-    print(f'== 8. 大区隔离: 同一账号 {account} 在 1001/1002 数据独立 ==')
+def test_server_isolation(account='zoner'):
+    """服数据隔离: 同一账号在两个服是两个独立角色（各自 Mongo 库）"""
+    print(f'== 8. 服隔离: 同一账号 {account} 在 1001/1002 数据独立 ==')
 
-    def enter(zone):
+    def enter(server):
         c = GameClient().connect('127.0.0.1:11100')
         r = c.call('login.auth', {'account': account, 'password': '123456'})
         assert r['ok'], r
-        if not r.get('token'):   # 单大区时 auth 已直发令牌，无需选区
-            r = c.call('login.enterZone', {'zone': zone})
+        if not r.get('token'):   # 单服时 auth 已直发令牌，无需选服
+            r = c.call('login.enterServer', {'server': server})
             assert r['ok'], r
         c.close()
         g = GameClient().connect(r['gameAddr'])
@@ -186,23 +186,23 @@ def test_zone_isolation(account='zoner'):
 
     # 1001：进游戏，在线充 100 钻
     g1, player1 = enter('1001')
-    print(f'  大区 1001 进入: {player1}')
+    print(f'  服 1001 进入: {player1}')
     d1 = player1['diamond']
-    http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&zone=1001')
+    http_get(f'http://127.0.0.1:41100/pay?account={account}&item=diamond&count=100&server=1001')
     import time
     time.sleep(1)
     after1 = g1.call('player.getInfo', {})['diamond']
     assert after1 == d1 + 100, (d1, after1)
-    print(f'  大区 1001 充值: {d1} -> {after1}')
+    print(f'  服 1001 充值: {d1} -> {after1}')
     g1.close()
 
     # 1002：同账号是另一个角色，从未充值，应是默认档（0 钻）
     g2, player2 = enter('1002')
-    print(f'  大区 1002 进入: {player2}')
+    print(f'  服 1002 进入: {player2}')
     assert player2['diamond'] == 0, player2
     assert player2['diamond'] != after1
     g2.close()
-    print('== 大区隔离验证通过 ==')
+    print('== 服隔离验证通过 ==')
     return True
 
 

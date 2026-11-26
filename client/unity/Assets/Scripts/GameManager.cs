@@ -3,8 +3,8 @@ using UnityEngine;
 /// <summary>
 /// 游戏主流程：登录(login 组) -> 进入游戏(game 组) -> 聊天/充值推送。
 /// 对应服务端的完整登录链路:
-///   login.auth{account, password} -> LoginAuthRsp{zones}，玩家选区
-///   login.enterZone{zone} -> EnterZoneRsp{token, gameAddr}
+///   login.auth{account, password} -> LoginAuthRsp{servers}，玩家选服
+///   login.enterServer{server} -> EnterServerRsp{token, gameAddr}
 ///   连接 gameAddr -> game.enter{account, token} -> GameEnterRsp{player}
 /// </summary>
 public class GameManager : MonoBehaviour
@@ -17,7 +17,7 @@ public class GameManager : MonoBehaviour
 
     public string Account { get; private set; }
     public string Token { get; private set; }
-    public string Zone { get; private set; }
+    public string Server { get; private set; }
     public PlayerInfo Player { get; private set; }
     public bool InGame { get; private set; }
 
@@ -57,7 +57,7 @@ public class GameManager : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    /// <summary>第一步：连 login 服验证账号，成功后展示大区列表供玩家选择</summary>
+    /// <summary>第一步：连 login 服验证账号，成功后展示服务器列表供玩家选择</summary>
     public void Login(string account, string password,
                       System.Action<string> onError = null)
     {
@@ -68,32 +68,32 @@ public class GameManager : MonoBehaviour
             {
                 if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
                 Account = rsp.account;
-                Debug.Log($"[Login] auth ok, zones={rsp.zones.Count}");
+                Debug.Log($"[Login] auth ok, servers={rsp.servers.Count}");
                 if (!string.IsNullOrEmpty(rsp.token))
                 {
-                    // 单大区：服务端已直发令牌，免选区直接进游戏
-                    Zone = rsp.zone;
+                    // 单服：服务端已直发令牌，免选服直接进游戏
+                    Server = rsp.server;
                     Token = rsp.token;
-                    Debug.Log($"[Login] single zone={Zone}, gameAddr={rsp.gameAddr}");
+                    Debug.Log($"[Login] single server={Server}, gameAddr={rsp.gameAddr}");
                     EnterGame(rsp.gameAddr, onError);
                     return;
                 }
-                Bootstrap.I.ShowZoneSelect(rsp.zones);
+                Bootstrap.I.ShowServerSelect(rsp.servers);
             },
             err => onError?.Invoke(err));
     }
 
-    /// <summary>第二步：玩家选定大区，发令牌并返回该大区的 game 地址</summary>
-    public void EnterZone(string zone, System.Action<string> onError = null)
+    /// <summary>第二步：玩家选定服务器，发令牌并返回该服的 game 地址</summary>
+    public void EnterServer(string server, System.Action<string> onError = null)
     {
-        NetworkClient.I.Call<EnterZoneRsp>("login.enterZone",
-            new EnterZoneReq { zone = zone },
+        NetworkClient.I.Call<EnterServerRsp>("login.enterServer",
+            new EnterServerReq { server = server },
             rsp =>
             {
                 if (!rsp.ok) { onError?.Invoke(rsp.error); return; }
-                Zone = rsp.zone;
+                Server = rsp.server;
                 Token = rsp.token;
-                Debug.Log($"[Login] enter zone={Zone}, gameAddr={rsp.gameAddr}");
+                Debug.Log($"[Login] enter server={Server}, gameAddr={rsp.gameAddr}");
                 EnterGame(rsp.gameAddr, onError);
             },
             err => onError?.Invoke(err));
@@ -113,7 +113,7 @@ public class GameManager : MonoBehaviour
                 InGame = true;
                 Bootstrap.I.ShowHud();
                 Bootstrap.I.SetStatus(
-                    $"进入游戏成功 [大区{Zone} {Player.service}] {Player.name} Lv.{Player.level}");
+                    $"进入游戏成功 [服务器{Server} {Player.service}] {Player.name} Lv.{Player.level}");
                 RefreshHud();
             },
             err => onError?.Invoke(err));
@@ -137,7 +137,7 @@ public class GameManager : MonoBehaviour
     /// <summary>演示充值：直接调 recharge 组的 HTTP 回调（真实项目由支付平台发起）</summary>
     public void TestRecharge(int count)
     {
-        string url = $"http://127.0.0.1:41100/pay?account={Account}&item=diamond&count={count}&zone={Zone}";
+        string url = $"http://127.0.0.1:41100/pay?account={Account}&item=diamond&count={count}&server={Server}";
         StartCoroutine(GetUrl(url));
     }
 

@@ -16,9 +16,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, ROOT)
 sys.path.insert(1, os.path.join(ROOT, 'tools'))
 
-from test_client import full_flow, test_zone_isolation  # noqa: E402
+from test_client import full_flow, test_server_isolation  # noqa: E402
 
-# (目录, 配置文件, 日志名)；game 组多开两个大区
+# (目录, 配置文件, 日志名)；game 组多开两个服
 GROUPS = [
     ('center', 'config.json', 'center'),
     ('recharge', 'config.json', 'recharge'),
@@ -129,9 +129,9 @@ def main():
         time.sleep(5)
 
         test_cluster_cannot_fake_enter()
-        full_flow('tester', '123456', zone='1001')
+        full_flow('tester', '123456', server='1001')
 
-        print('== 6. 热更新演示: 对 game 大区 1001 所有服务 reload app 包 ==')
+        print('== 6. 热更新演示: 对 game 服 1001 所有服务 reload app 包 ==')
         result = subprocess.run(
             [sys.executable, os.path.join(ROOT, 'tools', 'hotfix.py'),
              os.path.join(ROOT, 'game'), 'all', 'app', 'config_1001.json'],
@@ -139,11 +139,11 @@ def main():
         print(result.stdout or result.stderr)
 
         print('== 7. 热更新后再次登录验证服务仍正常 ==')
-        full_flow('tester2', '123456', zone='1001')
+        full_flow('tester2', '123456', server='1001')
 
-        # 大区 1002 全流程 + 双区数据隔离
-        full_flow('tester3', '123456', zone='1002')
-        test_zone_isolation('zoner')
+        # 服 1002 全流程 + 双服数据隔离
+        full_flow('tester3', '123456', server='1002')
+        test_server_isolation('zoner')
 
         print()
         print('########## 全部测试通过 ##########')

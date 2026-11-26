@@ -3,9 +3,9 @@
 与服务端（python3 asyncio）配套的 Unity 客户端，实现了完整登录链路：
 
 ```
-连接 login 服 -> login.auth 验证账号 -> 返回大区列表，玩家选区
-（只有一个大区时 auth 直接返回 token 和 gameAddr，免选区）
--> login.enterZone 拿 token 和 gameAddr
+连接 login 服 -> login.auth 验证账号 -> 返回服务器列表，玩家选服
+（只有一个服时 auth 直接返回 token 和 gameAddr，免选服）
+-> login.enterServer 拿 token 和 gameAddr
 -> 连接 game 进程 -> game.enter 进入游戏 -> 聊天 / 收推送 / 充值到账
 ```
 
