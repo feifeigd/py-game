@@ -9,8 +9,13 @@ recharge 组充值服务
   - 发货成功后只更新 status / delivered_at 两列
   - 玩家不在线时订单保持 pending（由 game 组 world 挂离线补发）
 
+定位角色所在服:
+  - 带 role 不带 server：role_id 前缀是出生服 real_id，跨组调 login
+    resolveServer 沿 servers 表重定向链解析现居服，支付平台侧不用关心服的概念
+  - server 参数仍可显式传（兼容老调用 / 无 role 时兜底 DEFAULT_SERVER）
+
 测试:
-    curl "http://127.0.0.1:41100/pay?account=foo&item=diamond&count=100"
+    curl "http://127.0.0.1:41100/pay?account=foo&role=<role_id>&item=diamond&count=100"
 """
 import uuid
 from datetime import UTC, datetime
@@ -31,13 +36,36 @@ DEFAULT_SERVER = '1001'
 assert isinstance(CTX.web_server, WebServer)
 @CTX.web_server.route('/pay')
 async def pay(query, body):
-    """支付回调入口: /pay?account=xx&item=diamond&count=100&server=1001"""
+    """支付回调入口: /pay?account=xx&role=<role_id>&item=diamond&count=100
+
+    多角色模型下充值按角色发货: 带 role 不带 server 时解析 role_id 前缀
+    （出生服），跨组调 login.resolveServer 沿 servers 表重定向链定位现居服；
+    role 缺省时该服只有一个角色才能自动定位，多个角色必须显式传
+    role，否则 world 返回 role required。
+    """
     account = query.get('account', '')
     item = query.get('item', 'diamond')
     count = int(query.get('count', 0))
-    server = str(query.get('server') or DEFAULT_SERVER)
+    server = str(query.get('server') or '')
+    role = str(query.get('role', ''))
     if not account or count <= 0:
         return {'ret': 1, 'msg': 'bad params'}
+
+    if not server and role:
+        # 支付平台侧不带服概念：role_id 前缀是出生服，问 login 解析现居服
+        birth, sep, _ = role.partition('_')
+        if sep and birth.isdigit():
+            real_id = await api.call_cluster(
+                'login', 'login.resolveServer', birth)
+            if not real_id:
+                log.warning(f'locate role {role} failed: unknown server {birth}')
+                return {'ret': 1, 'msg': 'role not found'}
+            server = str(real_id)
+        else:
+            # 合服设计前创建的老 role_id（无前缀）：兜底默认服
+            server = DEFAULT_SERVER
+    if not server:
+        server = DEFAULT_SERVER
 
     gdb = db.get()
     order_id = uuid.uuid4().hex
@@ -51,15 +79,18 @@ async def pay(query, body):
         'created_at': datetime.now(UTC),
         'delivered_at': None,
     })
-    log.notice('recharge order %s: %s server=%s %s x%s',
-               order_id, account, server, item, count)
+    log.notice('recharge order %s: %s server=%s role=%s %s x%s',
+               order_id, account, server, role or '<auto>', item, count)
 
-    # 跨组调用对应服的 world -> 路由到玩家所在进程 -> 玩家 actor 发货
+    # 跨组调用对应服的 world -> 路由到角色所在进程 -> 玩家 actor 发货
     result = await api.call_cluster(f'{GAME_CLUSTER_PREFIX}{server}',
                                     'recharge.onRecharge',
-                                    account, item, count)
+                                    account, role, item, count)
+    # 定位失败（role required / role not found）: 订单保持 pending，原样透传
+    if result.get('ret') != 0:
+        return {'ret': result['ret'], 'msg': result['msg'], 'orderId': order_id}
     # 发货成功: 增量更新订单状态（玩家不在线则保持 pending 等补发）
-    if result.get('ret') == 0 and 'delivered' in result.get('msg', ''):
+    if 'delivered' in result.get('msg', ''):
         await gdb.update_columns('orders', 'order_id', order_id, {
             'status': 'delivered',
             'delivered_at': datetime.now(UTC),

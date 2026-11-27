@@ -5,6 +5,10 @@
     客户端绕过列表直接 login.enterServer 也一律返回 server unavailable
   - 爆满(3)的服: 列表照常展示，新注册 enterServer 返回 server busy，
     已注册老玩家回本服不受影响
+  - 合服: 多个展示行（show_id 不同）指向同一 real_id，玩家从任一展示口进入
+    都路由到同一 game 组；注册按 real_id 去重，计数落在进入的展示行上
+  - 合服老玩家兜底: 角色档已迁入目标服但注册行还停在老 real_id 时
+    （merge 脚本未跑/漏跑），爆满服也放行并愈合注册行（愈合计一次，不再重复）
   - 所有拦截都发生在注册控制之前，register_count 不会虚增
 正常服(status=1)不受影响，enterServer 照常发令牌。
 
@@ -21,8 +25,10 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, ROOT)
 sys.path.insert(1, os.path.join(ROOT, 'tools'))
+sys.path.insert(1, os.path.join(ROOT, 'login'))
 
-from test_client import GameClient  # noqa: E402
+from app.const import ServerStatus  # noqa: E402
+from test_client import GameClient, pick_role  # noqa: E402
 from test_all import GROUPS, WAIT_PORTS, wait_port  # noqa: E402
 
 DSN = 'postgresql://postgres:123456@127.0.0.1:5432/pygame'
@@ -38,7 +44,8 @@ def set_server(real_id, **fields):
             sets = ', '.join(f'{k} = ${i + 2}' for i, k in enumerate(fields))
             await conn.execute(
                 f'UPDATE servers SET {sets} WHERE real_id = $1',
-                real_id, *fields.values())
+                real_id, *[int(v) if isinstance(v, ServerStatus) else v
+                           for v in fields.values()])
         finally:
             await conn.close()
 
@@ -52,6 +59,96 @@ def register_count(real_id):
         try:
             return await conn.fetchval(
                 'SELECT register_count FROM servers WHERE real_id = $1', real_id)
+        finally:
+            await conn.close()
+
+    return asyncio.run(_run())
+
+
+def register_count_by_show(show_id):
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            return await conn.fetchval(
+                'SELECT register_count FROM servers WHERE show_id = $1', show_id)
+        finally:
+            await conn.close()
+
+    return asyncio.run(_run())
+
+
+def add_server(show_id, name, real_id, status=ServerStatus.GOOD):
+    """模拟 GM 加服/合服行"""
+
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute('''
+                INSERT INTO servers (show_id, name, status, is_recommend,
+                                     real_id, start_time)
+                VALUES ($1, $2, $3, FALSE, $4, now())''',
+                show_id, name, int(status), real_id)
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
+
+
+def delete_server(show_id):
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute('DELETE FROM servers WHERE show_id = $1', show_id)
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
+
+
+def delete_registrations(*accounts):
+    """清掉测试账号的进服登记，保证 register_count 断言不受历史数据影响"""
+
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute(
+                'DELETE FROM account_servers WHERE account = ANY($1)', list(accounts))
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
+
+
+def fake_merge_registration(account, old_real):
+    """模拟合服老玩家：注册行停留在老 real_id（目标服查不到）"""
+
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            await conn.execute(
+                'DELETE FROM account_servers WHERE account = $1', account)
+            await conn.execute('''
+                INSERT INTO account_servers (account, real_id, created_at)
+                VALUES ($1, $2, now())''', account, old_real)
+        finally:
+            await conn.close()
+
+    asyncio.run(_run())
+
+
+def has_registration(account, real_id):
+    async def _run():
+        import asyncpg
+        conn = await asyncpg.connect(DSN)
+        try:
+            return await conn.fetchval('''
+                SELECT 1 FROM account_servers
+                WHERE account = $1 AND real_id = $2''', account, real_id)
         finally:
             await conn.close()
 
@@ -89,6 +186,13 @@ def main():
                 raise RuntimeError('port %d not ready' % port)
         time.sleep(5)  # 等组网与 app load
 
+        # 复位受测服状态（上次中断可能留下脏状态），保证测试幂等
+        set_server('1002', status=ServerStatus.GOOD,
+                   start_time=datetime(2026, 1, 1, tzinfo=timezone.utc))
+        delete_server('9001')
+        delete_registrations('warmup', 'merger', 'mergedold',
+                             *(f'statuser{i}' for i in range(1, 7)))
+
         # 预热：enterServer 依赖两服 world 的 prepareLogin 就绪，轮询到通为止
         deadline = time.time() + 60
         while True:
@@ -114,7 +218,7 @@ def main():
 
         print('== 2. 维护(0): 列表隐藏 + 绕过列表强进被拒 ==')
         before = register_count('1002')
-        set_server('1002', status=0)
+        set_server('1002', status=ServerStatus.MAINTAIN)
         c2, r2 = auth('statuser2')
         assert [s['server'] for s in r2['servers']] == ['1001'], r2['servers']
         print('  auth 列表只剩 1001 ✓')
@@ -124,14 +228,14 @@ def main():
         c2.close()
 
         print('== 3. 备用(4): 列表隐藏 + 强进被拒 ==')
-        set_server('1002', status=4)
+        set_server('1002', status=ServerStatus.RESERVE)
         c3, r3 = auth('statuser3')
         assert [s['server'] for s in r3['servers']] == ['1001'], r3['servers']
         expect_unavailable(c3, '1002', '备用(status=4)')
         c3.close()
 
         print('== 4. 未到开服时间: 列表隐藏 + 强进被拒 ==')
-        set_server('1002', status=1,
+        set_server('1002', status=ServerStatus.GOOD,
                    start_time=datetime(2999, 1, 1, tzinfo=timezone.utc))
         c4, r4 = auth('statuser4')
         assert [s['server'] for s in r4['servers']] == ['1001'], r4['servers']
@@ -139,16 +243,17 @@ def main():
         c4.close()
 
         print('== 5. 恢复正常(1): 重新可见且能进 ==')
-        set_server('1002', status=1,
+        set_server('1002', status=ServerStatus.GOOD,
                    start_time=datetime(2026, 1, 1, tzinfo=timezone.utc))
         c5, r5 = auth('statuser5')
         assert [s['server'] for s in r5['servers']] == ['1001', '1002'], r5['servers']
         r5 = c5.call('login.enterServer', {'server': '1002'})
         assert r5['ok'], r5
+        r5 = pick_role(c5, 'statuser5', '1002', r5)   # 0 角色先创角才有令牌
         print(f'  enterServer 1002 -> ok, gameAddr={r5["gameAddr"]} ✓')
 
         print('== 6. 爆满(3): 列表可见，新注册拒入(server busy)，老玩家可回 ==')
-        set_server('1002', status=3)
+        set_server('1002', status=ServerStatus.FULL)
         before = register_count('1002')
         c6, r6 = auth('statuser6')
         assert [s['server'] for s in r6['servers']] == ['1001', '1002'], r6['servers']
@@ -164,8 +269,64 @@ def main():
         r5 = c5.call('login.enterServer', {'server': '1002'})
         assert r5['ok'], r5
         print('  老玩家回服 enterServer 1002 -> ok ✓')
-        set_server('1002', status=1)
+        set_server('1002', status=ServerStatus.GOOD)
         c5.close()
+
+        print('== 7. 合服: 多个展示行指向同一 real_id ==')
+        add_server('9001', '合服·风起云涌', real_id='1001')
+        c7, r7 = auth('merger')
+        shown7 = [s['server'] for s in r7['servers']]
+        assert '9001' in shown7, shown7
+        print('  auth 列表含合服展示行 9001 ✓')
+        cnt_1001 = register_count_by_show('1001')
+        cnt_9001 = register_count_by_show('9001')
+        # 从展示口 9001 进服: 路由到 real 1001 的 game 地址
+        r7 = c7.call('login.enterServer', {'server': '9001'})
+        assert r7['ok'], r7
+        r7 = pick_role(c7, 'merger', '9001', r7)   # 0 角色先创角才有令牌
+        assert r7['gameAddr'].startswith('127.0.0.1:211'), r7
+        print(f'  enterServer 9001 -> real 1001 的地址 {r7["gameAddr"]} ✓')
+        # 新注册计数落在进入的展示行上，1001 行不受影响
+        assert register_count_by_show('9001') == cnt_9001 + 1
+        assert register_count_by_show('1001') == cnt_1001
+        print('  register_count 只计在 9001 行 ✓')
+        # 同账号再从 1001 进: 按 real_id 已注册，直接放行且不再计数
+        r7 = c7.call('login.enterServer', {'server': '1001'})
+        assert r7['ok'], r7
+        assert register_count_by_show('9001') == cnt_9001 + 1
+        assert register_count_by_show('1001') == cnt_1001
+        print('  同账号换展示口进 1001 -> 已注册放行，不重复计数 ✓')
+        delete_server('9001')
+        c7.close()
+
+        print('== 8. 合服老玩家兜底: 注册行停在老服，爆满也放行并愈合 ==')
+        # mergedold 在 1001 有角色（先正常注册创角），
+        # 然后把注册行改成老 real_id 1002，模拟"迁了数据但注册表没跟上"
+        c8, r8 = auth('mergedold')
+        r8 = c8.call('login.enterServer', {'server': '1001'})
+        assert r8['ok'], r8
+        r8 = pick_role(c8, 'mergedold', '1001', r8)   # 确保有角色
+        c8.close()
+        fake_merge_registration('mergedold', '1002')
+        assert has_registration('mergedold', '1001') is None
+        # 目标服爆满：新注册进不来，但 mergedold 有角色 -> 老玩家放行
+        set_server('1001', status=ServerStatus.FULL)
+        before = register_count('1001')
+        c8, r8 = auth('mergedold')
+        r8 = c8.call('login.enterServer', {'server': '1001'})
+        assert r8['ok'], r8
+        assert r8['roles'], r8
+        print('  爆满下合服老玩家 enterServer 1001 -> ok，角色列表带回 ✓')
+        assert register_count('1001') == before + 1, '愈合应按一次注册计数'
+        print('  register_count 愈合计一次 ✓')
+        assert has_registration('mergedold', '1001') == 1
+        # 再进一次：注册行已愈合，走快路径不再计数
+        r8 = c8.call('login.enterServer', {'server': '1001'})
+        assert r8['ok'], r8
+        assert register_count('1001') == before + 1
+        print('  再次进服走快路径，不重复计数 ✓')
+        set_server('1001', status=ServerStatus.GOOD)
+        c8.close()
         c.close()
 
         print()

@@ -35,16 +35,25 @@ public class ServerInfo
 }
 
 [Serializable]
+public class RoleInfo
+{
+    public string role;    // 角色ID
+    public string name;    // 角色名
+    public int sex;        // 性别：1=男 2=女
+    public int level;      // 等级
+}
+
+[Serializable]
 public class LoginAuthRsp
 {
     public bool ok;
     public string error;
     public string account;
     public List<ServerInfo> servers;   // 可选服务器列表，玩家选服后调 login.enterServer
-    // 只有一个服时服务端直接发令牌，客户端免去 login.enterServer
+    // 只有一个服时服务端直接顺路完成选服（免去 login.enterServer），
+    // 统一返回 roles 角色列表（0/1/多个），客户端进角色面板
     public string server;
-    public string token;
-    public string gameAddr;
+    public List<RoleInfo> roles;
 }
 
 // ------------------------- 选服 -------------------------
@@ -61,8 +70,48 @@ public class EnterServerRsp
     public string error;
     public string account;
     public string server;
+    public List<RoleInfo> roles;   // 角色列表（0/1/多个），进角色面板选角或创角
+}
+
+// ------------------------- 创角（没有角色时） -------------------------
+[Serializable]
+public class CreateRoleReq
+{
+    public string server;
+    public string name;   // 角色名（本服唯一，1-12 字）
+    public int sex;       // 1=男 2=女
+}
+
+[Serializable]
+public class CreateRoleRsp
+{
+    public bool ok;
+    public string error;
+    public string account;
+    public string server;
+    public string role;
     public string token;
-    public string gameAddr;   // 该服分配到的 game 进程地址 "host:port"
+    public string gameAddr;
+}
+
+// ------------------------- 选角（多角色时） -------------------------
+[Serializable]
+public class EnterRoleReq
+{
+    public string server;
+    public string role;   // 已有角色ID
+}
+
+[Serializable]
+public class EnterRoleRsp
+{
+    public bool ok;
+    public string error;
+    public string account;
+    public string server;
+    public string role;
+    public string token;
+    public string gameAddr;
 }
 
 // ------------------------- 进入游戏 -------------------------
@@ -70,6 +119,7 @@ public class EnterServerRsp
 public class GameEnterReq
 {
     public string account;
+    public string role;   // 角色ID（创角/选角时由服务端发给客户端）
     public string token;
 }
 
@@ -77,7 +127,9 @@ public class GameEnterReq
 public class PlayerInfo
 {
     public string account;
+    public string role;
     public string name;
+    public int sex;   // 1=男 2=女
     public int level;
     public int exp;
     public int diamond;
@@ -109,7 +161,7 @@ public class OkRsp
 [Serializable]
 public class ChatPush
 {
-    public string account;
+    public string name;   // 角色名
     public string text;
 }
 

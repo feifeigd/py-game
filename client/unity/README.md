@@ -4,9 +4,11 @@
 
 ```
 连接 login 服 -> login.auth 验证账号 -> 返回服务器列表，玩家选服
-（只有一个服时 auth 直接返回 token 和 gameAddr，免选服）
--> login.enterServer 拿 token 和 gameAddr
--> 连接 game 进程 -> game.enter 进入游戏 -> 聊天 / 收推送 / 充值到账
+（只有一个服时 auth 直接顺路完成选服，免选服调用）
+-> login.enterServer：统一返回角色列表（0/1/多个），进角色面板
+-> login.createRole{server, name, sex} 自选名字/性别创角，
+   或 login.enterRole{server, role} 选定已有角色，两者都拿 token 和 gameAddr
+-> 连接 game 进程 -> game.enter{account, role, token} 进入游戏 -> 聊天 / 收推送 / 充值到账
 ```
 
 ## 目录

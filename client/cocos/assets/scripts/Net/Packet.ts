@@ -24,16 +24,22 @@ export interface ServerInfo {
     recommend: boolean; // 是否推荐服
 }
 
+export interface RoleInfo {
+    role: string;    // 角色ID
+    name: string;    // 角色名
+    sex: number;     // 性别：1=男 2=女
+    level: number;   // 等级
+}
+
 export interface LoginAuthRsp {
     ok: boolean;
     error?: string;
     account: string;
     servers: ServerInfo[];   // 可选服务器列表，玩家选服后调 login.enterServer
-    // 只有一个服时服务端直接发令牌，客户端免去 login.enterServer
+    // 只有一个服时服务端直接顺路完成选服（免去 login.enterServer），
+    // 统一返回 roles 角色列表（0/1/多个），客户端进角色面板
     server?: string;
-    token?: string;
-    gameAddr?: string;
-    gameWsAddr?: string;
+    roles?: RoleInfo[];
 }
 
 // ------------------------- 选服 -------------------------
@@ -46,20 +52,56 @@ export interface EnterServerRsp {
     error?: string;
     account: string;
     server: string;
+    roles: RoleInfo[];   // 角色列表（0/1/多个），进角色面板选角或创角
+}
+
+// ------------------------- 创角（没有角色时） -------------------------
+export interface CreateRoleReq {
+    server: string;
+    name: string;    // 角色名（本服唯一，1-12 字）
+    sex: number;     // 1=男 2=女
+}
+
+export interface CreateRoleRsp {
+    ok: boolean;
+    error?: string;
+    account: string;
+    server: string;
+    role: string;
     token: string;
-    gameAddr: string;    // game 进程 TCP 地址（Unity 等原生客户端用）
-    gameWsAddr: string;  // game 进程 WebSocket 地址（本客户端用）
+    gameAddr: string;
+    gameWsAddr: string;
+}
+
+// ------------------------- 选角（多角色时） -------------------------
+export interface EnterRoleReq {
+    server: string;
+    role: string;    // 已有角色ID
+}
+
+export interface EnterRoleRsp {
+    ok: boolean;
+    error?: string;
+    account: string;
+    server: string;
+    role: string;
+    token: string;
+    gameAddr: string;
+    gameWsAddr: string;
 }
 
 // ------------------------- 进入游戏 -------------------------
 export interface GameEnterReq {
     account: string;
+    role: string;    // 角色ID（创角/选角时由服务端发给客户端）
     token: string;
 }
 
 export interface PlayerInfo {
     account: string;
+    role: string;
     name: string;
+    sex: number;     // 1=男 2=女
     level: number;
     exp: number;
     diamond: number;
@@ -83,7 +125,7 @@ export interface OkRsp {
 }
 
 export interface ChatPush {
-    account: string;
+    name: string;   // 角色名
     text: string;
 }
 

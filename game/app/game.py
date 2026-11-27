@@ -8,21 +8,21 @@ game 组单人进程（game1 / game2，玩家进程）
 
 多角色模型: 一个账号在一个服可有多个角色（合服后常见）。
 身份一律用 role_id（player 档主键，actor 寻址名 player:<role_id>），
-account 只用于展示与按号查角色列表。同账号的不同角色可同时在线。
+account 只用于展示与按号查角色列表。同账号多角色能否同时在线由
+config singleRoleOnline 决定（见 world.py 顶号策略）。
 
 数据持久化（MongoDB，增量更新）:
-  - 进入游戏时按 role_id 加载角色档，role='' 时新建档
+  - 角色档由 world.createRole 创建（玩家自选名字/性别），本进程只按 role_id 加载
   - 角色字段放在 DirtyRecord 里，顶层赋值即标脏
   - 每 dataSaveInterval 秒把脏字段 $set 回库，下线时兜底落一次
 
 本进程对客户端暴露 tcpServer（见 config.json），客户端消息:
-    game.enter      进入游戏（验证令牌，role='' 新建角色）
+    game.enter      进入游戏（验证令牌 + role_id）
     player.chat     聊天
     player.getInfo  查询角色信息
 """
 import asyncio
-
-from bson import ObjectId
+import time
 
 from app.const import COLL_PLAYER
 from engine import api, db
@@ -31,14 +31,6 @@ from engine.core.actor import Actor
 from engine.core.handler import handler
 from engine.net.server import ClientSession
 from engine.util import log
-
-# 新角色默认档
-DEFAULT_DATA = {
-    'name': '',
-    'level': 1,
-    'exp': 0,
-    'diamond': 0,
-}
 
 
 class Player(Actor):
@@ -52,6 +44,8 @@ class Player(Actor):
         self._is_new = is_new
         # 角色数据走 DirtyRecord: 顶层字段赋值即标脏，增量落库
         self.data = db.DirtyRecord(doc)
+        # 刷新最近登录时间（角色面板按它排序、默认选中上次玩的角色）
+        self.data.login_time = int(time.time() * 1000)
 
     # 角色字段属性化: 读写在 data 上，写操作自动标脏
     @property
@@ -108,7 +102,7 @@ class Player(Actor):
         log.info('[%s] %s(%s) chat: %s', CTX.service_name, self.name, self.role, text)
         # 经全局进程做全服跑马灯广播（展示用角色名）
         api.send_service('master', 'world.chatMarquee',
-                         self.account, text, CTX.service_name)
+                         self.name, text, CTX.service_name)
         return {'ok': True}
 
     async def do_get_info(self, data):
@@ -116,6 +110,7 @@ class Player(Actor):
             'account': self.account,
             'role': self.role,
             'name': self.data.name,
+            'sex': self.data.sex,
             'level': self.data.level,
             'exp': self.data.exp,
             'diamond': self.data.diamond,
@@ -173,24 +168,15 @@ def logout(role, player):
     log.notice('role %s logout from %s', role, CTX.service_name)
 
 
-async def _new_role_doc(account):
-    """新建角色档: 首个角色叫 勇者_<account>，之后依次带序号"""
-    count = await db.get().count(COLL_PLAYER, {'account': account})
-    name = f'勇者_{account}' if count == 0 else f'勇者_{account}{count + 1}'
-    doc = dict(DEFAULT_DATA)
-    doc['account'] = account
-    doc['name'] = name
-    return doc
-
-
 # ---------------------------------------------------------------------
 # handler 入口
 # ---------------------------------------------------------------------
 @handler('game.enter', public=True)
 async def enter(session: ClientSession, data):
-    """客户端进入游戏：验证令牌 -> 加载/新建角色档 -> 创建玩家 actor
+    """客户端进入游戏：验证令牌 -> 加载角色档 -> 创建玩家 actor
 
-    data: {account, role, token}；role='' 表示在本服新建一个角色
+    data: {account, role, token}；角色档由 login.createRole 提前建好，
+    这里只加载不创建
     """
     # 只认真实客户端连接：集群内 RPC 的参数走 JSON，伪造不出 ClientSession，
     # 不拦的话会在 session.player 赋值处炸掉，还留下绑定过的幽灵玩家 actor
@@ -200,24 +186,18 @@ async def enter(session: ClientSession, data):
     account = str(data.get('account', ''))
     role = str(data.get('role', ''))
     token = str(data.get('token', ''))
-    if not account or not token:
-        return {'ok': False, 'error': 'account/token required'}
+    if not account or not role or not token:
+        return {'ok': False, 'error': 'account/role/token required'}
 
     result = await api.call_service(
         'master', 'world.verifyToken', account, role, token, CTX.service_name)
     if not result.get('ok'):
         return {'ok': False, 'error': result.get('error', 'verify failed')}
 
-    if role:
-        # 已有角色：加载档位，且必须属于本账号（防止拿别人的 role_id 进号）
-        doc = await db.get().load(COLL_PLAYER, 'role', role)
-        if doc is None or doc.get('account') != account:
-            return {'ok': False, 'error': 'role not found'}
-        is_new = False
-    else:
-        role = str(ObjectId())
-        doc = await _new_role_doc(account)
-        is_new = True
+    # 加载角色档，且必须属于本账号（防止拿别人的 role_id 进号）
+    doc = await db.get().load(COLL_PLAYER, 'role', role)
+    if doc is None or doc.get('account') != account:
+        return {'ok': False, 'error': 'role not found'}
 
     # 已在的（同进程同角色重进）先清掉
     old = _players.get(role)
@@ -227,12 +207,13 @@ async def enter(session: ClientSession, data):
     doc.pop('role', None)  # role 是主键，不进 DirtyRecord
 
     # bind 后本进程内可经 api.actor_ref 寻址，跨进程走 sys.tellActor/sys.askActor
-    player = Player(account, role, session, doc, is_new).bind('player:' + role).start()
+    player = Player(account, role, session, doc, False).bind('player:' + role).start()
     _players[role] = player
     session.player = player
     session.account = account
-    log.notice('player %s enter %s (%s)', account, CTX.service_name,
-               'new' if is_new else 'loaded')
+    # 登记在线位置（放在 verifyToken 之外：那时档还没加载，可能失败）
+    api.send_service('master', 'world.playerOnline', account, role, CTX.service_name)
+    log.notice('player %s role=%s enter %s', account, role, CTX.service_name)
     return {'ok': True, 'player': await player.ask('get_info', {})}
 
 
@@ -268,7 +249,7 @@ async def _save_loop():
             try:
                 await player.ask('save')
             except Exception:
-                log.exception(f'save player {player.account} failed')
+                log.exception(f'save role {player.role} failed')
 
     while True:
         await asyncio.sleep(interval)
@@ -295,7 +276,7 @@ async def drain():
         try:
             await player.ask('kick', 'shrink')
         except Exception:
-            log.exception(f'kick player {player.account} failed')
+            log.exception(f'kick role {player.role} failed')
     # 等 __logout__ 处理完（session 关闭是异步的）
     for _ in range(300):
         if not _players:

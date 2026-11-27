@@ -13,7 +13,7 @@ import {
     EditBox, Graphics, Label, Layers, Node, UITransform,
 } from 'cc';
 import { GameManager } from './GameManager';
-import { ServerInfo } from './Net/Packet';
+import { RoleInfo, ServerInfo } from './Net/Packet';
 
 const { ccclass } = _decorator;
 
@@ -31,6 +31,7 @@ export class Bootstrap extends Component {
     private _passwordInput: EditBox = null as unknown as EditBox;
     private _chatInput: EditBox = null as unknown as EditBox;
     private _serverPanel: Node | null = null;
+    private _rolePanel: Node | null = null;
     private _statusLabel: Label = null as unknown as Label;
     private _infoLabel: Label = null as unknown as Label;
     private _chatLabel: Label = null as unknown as Label;
@@ -52,12 +53,14 @@ export class Bootstrap extends Component {
         this._loginPanel.active = true;
         this._hudPanel.active = false;
         if (this._serverPanel) this._serverPanel.active = false;
+        if (this._rolePanel) this._rolePanel.active = false;
     }
 
     public showHud(): void {
         this._loginPanel.active = false;
         this._hudPanel.active = true;
         if (this._serverPanel) this._serverPanel.active = false;
+        if (this._rolePanel) this._rolePanel.active = false;
     }
 
     /** 账号验证通过后展示服务器列表，玩家选服后调 login.enterServer */
@@ -80,6 +83,81 @@ export class Bootstrap extends Component {
                 GameManager.I.enterServer(info.server,
                     err => this.setStatus(`进入服务器失败: ${err}`));
             });
+        });
+    }
+
+    /** 角色面板：已有角色一人一个按钮（含性别，点击选中），
+     * 服务端按最近登录倒序，默认选中上次玩的角色，"进入游戏"进选中角色；
+     * 底部是创角表单（名字输入 + 性别切换 + 创建并进入，调 login.createRole），
+     * 0 个角色时只显示创角表单 */
+    public showRoleSelect(roles: RoleInfo[]): void {
+        this._loginPanel.active = false;
+        if (this._serverPanel) this._serverPanel.active = false;
+        this._hudPanel.active = false;
+        if (this._rolePanel) this._rolePanel.destroy();
+        const height = 400 + roles.length * 70;
+        const panel = this._makePanel(this._loginPanel.parent!, 'RolePanel',
+            0, 40, 460, height);
+        this._rolePanel = panel;
+        this._makeLabel(panel, 'Title', roles.length > 0 ? '选择角色' : '创建角色',
+            0, height / 2 - 50, 400, 40, 24,
+            Label.HorizontalAlign.CENTER, Color.WHITE);
+
+        let y = height / 2 - 130;
+        let selected = roles.length > 0 ? roles[0].role : '';   // 默认选中最近登录的
+        let marker: Label | null = null;
+        if (roles.length > 0) {
+            marker = this._makeLabel(panel, 'SelectedMarker', '▶',
+                -190, y, 40, 52, 24, Label.HorizontalAlign.CENTER, Color.WHITE);
+        }
+        roles.forEach((info, i) => {
+            const btnY = y - i * 70;
+            const sexTag = info.sex === 2 ? '（女）' : '（男）';
+            const recentTag = i === 0 ? ' ·最近' : '';
+            const btn = this._makeButton(panel, `Role${i}`,
+                `${info.name}${sexTag}  Lv.${info.level}${recentTag}`,
+                0, btnY, 300, 52);
+            btn.node.on(Button.EventType.CLICK, () => {
+                selected = info.role;
+                marker!.node.setPosition(-190, btnY, 0);
+            });
+        });
+        y -= roles.length * 70;
+
+        if (roles.length > 0) {
+            const enterBtn = this._makeButton(panel, 'EnterGame', '进入游戏',
+                0, y, 300, 52);
+            enterBtn.node.on(Button.EventType.CLICK, () => {
+                this.setStatus('进入角色...');
+                GameManager.I.enterRole(selected,
+                    err => this.setStatus(`进入角色失败: ${err}`));
+            });
+            y -= 80;
+            this._makeLabel(panel, 'CreateLabel', '—— 新建角色 ——',
+                0, y + 15, 300, 30, 16, Label.HorizontalAlign.CENTER, Color.WHITE);
+        }
+
+        // 创角表单：角色名 + 性别 + 确认
+        const nameInput = this._makeInput(panel, 'NameInput', -60, y - 40, 220, 36, '');
+        nameInput.placeholderLabel!.string = '输入角色名（1-12字）';
+
+        let sex = 1;
+        const sexBtn = this._makeButton(panel, 'SexToggle', '性别：男',
+            140, y - 40, 100, 36);
+        sexBtn.node.on(Button.EventType.CLICK, () => {
+            sex = sex === 1 ? 2 : 1;
+            sexBtn.node.getComponentInChildren(Label)!.string =
+                sex === 1 ? '性别：男' : '性别：女';
+        });
+
+        const createBtn = this._makeButton(panel, 'CreateRole', '创建并进入',
+            0, y - 110, 300, 52);
+        createBtn.node.on(Button.EventType.CLICK, () => {
+            const name = nameInput.string.trim();
+            if (!name) { this.setStatus('请输入角色名'); return; }
+            this.setStatus('创建角色...');
+            GameManager.I.createRole(name, sex,
+                err => this.setStatus(`创建角色失败: ${err}`));
         });
     }
 

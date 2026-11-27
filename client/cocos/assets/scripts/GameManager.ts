@@ -2,13 +2,15 @@
  * 游戏主流程：登录(login 组) -> 进入游戏(game 组) -> 聊天/充值推送。
  * 对应服务端的完整登录链路:
  *   login.auth{account, password} -> LoginAuthRsp{servers}，玩家选服
- *   login.enterServer{server} -> EnterServerRsp{token, gameWsAddr}
- *   连接 gameWsAddr -> game.enter{account, token} -> GameEnterRsp{player}
+ *   login.enterServer{server} -> 统一返回 roles 角色列表（0/1/多个），进角色面板
+ *   login.createRole{server, name, sex} -> 自选名字/性别创角，发令牌
+ *   login.enterRole{server, role} -> 选定已有角色，发令牌
+ *   连接 gameWsAddr -> game.enter{account, role, token} -> GameEnterRsp{player}
  */
 import { NetworkClient } from './Net/NetworkClient';
 import {
-    ChatPush, EnterServerRsp, GameEnterRsp, KickPush, LevelUpPush,
-    LoginAuthRsp, OkRsp, PlayerInfo, RechargePush,
+    ChatPush, CreateRoleRsp, EnterRoleRsp, EnterServerRsp, GameEnterRsp, KickPush,
+    LevelUpPush, LoginAuthRsp, OkRsp, PlayerInfo, RechargePush,
 } from './Net/Packet';
 import { Bootstrap } from './Bootstrap';
 
@@ -40,6 +42,7 @@ export class GameManager {
 
     public account = '';
     public server = '';
+    public role = '';
     public token = '';
     public player: PlayerInfo | null = null;
     public inGame = false;
@@ -47,7 +50,7 @@ export class GameManager {
     /** 推送处理表: key -> 处理方法。新增推送只需在这里登记一行 */
     private readonly _pushHandlers: Record<string, PushHandler> = {
         'chat.push': push<ChatPush>(p => {
-            if (Bootstrap.I) Bootstrap.I.addChatLine(`${p.account}: ${p.text}`);
+            if (Bootstrap.I) Bootstrap.I.addChatLine(`${p.name}: ${p.text}`);
         }),
         'recharge.push': push<RechargePush>(p => {
             if (Bootstrap.I) Bootstrap.I.addChatLine(`[充值到账] ${p.item} x${p.count}，当前钻石 ${p.diamond}`);
@@ -88,12 +91,10 @@ export class GameManager {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'login failed'); return; }
                     this.account = rsp.account;
                     console.log(`[Login] auth ok, servers=${rsp.servers.length}`);
-                    if (rsp.token) {
-                        // 单服：服务端已直发令牌，免选服直接进游戏
+                    if (rsp.roles) {
+                        // 单服：服务端已顺路完成选服，直接进角色面板（选角/创角）
                         this.server = rsp.server!;
-                        this.token = rsp.token;
-                        console.log(`[Login] single server=${this.server}, gameWsAddr=${rsp.gameWsAddr}`);
-                        this._enterGame(rsp.gameWsAddr!, onError);
+                        if (Bootstrap.I) Bootstrap.I.showRoleSelect(rsp.roles);
                         return;
                     }
                     if (Bootstrap.I) Bootstrap.I.showServerSelect(rsp.servers);
@@ -102,28 +103,56 @@ export class GameManager {
         });
     }
 
-    /** 第二步：玩家选定服务器，发令牌并返回该服的 game 地址 */
+    /** 第二步：玩家选定服务器，返回角色列表（0/1/多个），进角色面板 */
     public enterServer(server: string, onError?: (err: string) => void): void {
         NetworkClient.I.call<EnterServerRsp>('login.enterServer',
             { server },
             rsp => {
                 if (!rsp.ok) { onError && onError(rsp.error ?? 'enter server failed'); return; }
                 this.server = rsp.server;
+                console.log(`[Login] server=${this.server}, roles=${rsp.roles.length}`);
+                if (Bootstrap.I) Bootstrap.I.showRoleSelect(rsp.roles);
+            },
+            err => onError && onError(err));
+    }
+
+    /** 第三步（创角）：自选名字/性别创角，发令牌并返回 game 地址 */
+    public createRole(name: string, sex: number, onError?: (err: string) => void): void {
+        NetworkClient.I.call<CreateRoleRsp>('login.createRole',
+            { server: this.server, name, sex },
+            rsp => {
+                if (!rsp.ok) { onError && onError(rsp.error ?? 'create role failed'); return; }
+                this.role = rsp.role;
                 this.token = rsp.token;
-                console.log(`[Login] enter server=${this.server}, gameWsAddr=${rsp.gameWsAddr}`);
+                console.log(`[Login] create role=${this.role} name=${name}, gameWsAddr=${rsp.gameWsAddr}`);
                 this._enterGame(rsp.gameWsAddr, onError);
             },
             err => onError && onError(err));
     }
 
-    /** 第二步：拿 token 连 game 进程，进入游戏 */
+    /** 第三步（选角）：选定已有角色，发令牌并返回 game 地址 */
+    public enterRole(role: string, onError?: (err: string) => void): void {
+        NetworkClient.I.call<EnterRoleRsp>('login.enterRole',
+            { server: this.server, role },
+            rsp => {
+                if (!rsp.ok) { onError && onError(rsp.error ?? 'enter role failed'); return; }
+                this.role = rsp.role;
+                this.token = rsp.token;
+                console.log(`[Login] enter role=${this.role}, gameWsAddr=${rsp.gameWsAddr}`);
+                this._enterGame(rsp.gameWsAddr, onError);
+            },
+            err => onError && onError(err));
+    }
+
+    /** 拿 token 连 game 进程，进入游戏 */
     private _enterGame(wsAddr: string, onError?: (err: string) => void): void {
         NetworkClient.I.connect(wsAddr, () => {
             NetworkClient.I.call<GameEnterRsp>('game.enter',
-                { account: this.account, token: this.token },
+                { account: this.account, role: this.role, token: this.token },
                 rsp => {
                     if (!rsp.ok) { onError && onError(rsp.error ?? 'enter failed'); return; }
                     this.player = rsp.player;
+                    this.role = rsp.player.role;
                     this.inGame = true;
                     if (Bootstrap.I) {
                         Bootstrap.I.showHud();
@@ -153,7 +182,7 @@ export class GameManager {
 
     /** 演示充值：直接调 recharge 组的 HTTP 回调（真实项目由支付平台发起） */
     public testRecharge(count: number): void {
-        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}&server=${this.server}`;
+        const url = `http://127.0.0.1:41100/pay?account=${this.account}&item=diamond&count=${count}&server=${this.server}&role=${this.role}`;
         fetch(url)
             .then(r => r.text())
             .then(t => console.log('[Recharge]', t))

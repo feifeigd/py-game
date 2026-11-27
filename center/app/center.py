@@ -5,8 +5,12 @@ center 进程组（中心服务）
   - 收集各 game 组上报的在线人数（game world 每 30 秒跨组上报）
   - 在线统计增量落 PG online_stats 表（只更新 online/updated_at 两列）
   - 提供全平台在线统计查询
+
+注: 角色 -> 所在服的定位不在 center（不搞全量角色户籍表，数据量太大）；
+role_id 前缀是出生服，login 组 servers 表的老服行兼作合服重定向表，
+recharge 跨组调 login.resolveServer 沿重定向链解析现居服
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from engine import db
 from engine.core.actor import Actor

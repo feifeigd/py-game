@@ -2,6 +2,8 @@
 
 增量更新语义: save() 只 $set 脏字段；is_new=True 时整文档 upsert。
 """
+from pymongo.errors import DuplicateKeyError  # noqa: F401 供业务侧捕获主键/唯一索引冲突
+
 from engine.util import log
 
 
@@ -42,8 +44,12 @@ class MongoDB:
     async def count(self, coll, query):
         return await self._db[coll].count_documents(query)
 
-    async def create_index(self, coll, *keys):
-        await self._db[coll].create_index(list(keys))
+    async def insert(self, coll, doc):
+        """整档插入（建档用）；唯一索引冲突抛 DuplicateKeyError"""
+        await self._db[coll].insert_one(doc)
+
+    async def create_index(self, coll, *keys, unique=False):
+        await self._db[coll].create_index(list(keys), unique=unique)
 
     async def save(self, coll, key_field, key, record, is_new=False):
         """增量落库: 只写脏字段; is_new 或脏为空时的整档兜底写全量

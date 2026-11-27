@@ -73,6 +73,8 @@ py-game/
   tools/cli.py             集群 debug CLI（连 master 的 clusterPort 发内部 RPC：call/send/ask/tell/keys/actors/hotfix）
   tools/test_client.py     模拟客户端（与 Unity 同协议）
   tools/test_all.py        一键联调：起四个组->登录->聊天->充值->热更->再登录
+  tools/test_server_status.py  选服状态/注册拦截 + 合服展示专项
+  tools/test_multi_role.py     多角色专项：建档/选角/同账号双角色在线/按角色充值
   tools/test_rebind.py     嵌套对象热更重绑（rebind_fields）验证
   client/unity/            Unity 客户端工程（见 client/unity/README.md）
   client/cocos/            Cocos Creator 客户端工程，走 WebSocket（见 client/cocos/README.md）
@@ -101,7 +103,7 @@ uv run python tools/test_all.py
 python tools/hotfix.py game all app config_1001.json   # 服 1001 所有服务
 python tools/hotfix.py game game1                      # 只热更默认配置的 game1
 
-# 4. 模拟充值（server 参数指定服，缺省 1001）
+# 4. 模拟充值（server 参数指定服，缺省 1001；多角色账号必须带 role 参数）
 curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&server=1001"
 ```
 
@@ -114,7 +116,7 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&server=10
   0 与 4 及未到开服时间的不展示，推荐服排前）；
   玩家选定后 `login.enterServer {server}`（server = 展示服号 show_id），login 按
   `servers.<real_id>.gameNodes` 把玩家分配到该服的 gameN，令牌也登记到对应服的 world，
-  返回该服的 game 地址。**只有一个服时 `login.auth` 直接发令牌返回 game 地址**，
+  返回该服的 game 地址。**只有一个服时 `login.auth` 顺路完成选服直接返回角色列表**，
   客户端免去选服调用
 - 状态拦截：绕过列表直接 `enterServer` 隐藏服号（维护/备用/未开服）同样返回
   `server unavailable`，且拦截在注册控制之前，`register_count` 不虚增
@@ -125,6 +127,20 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&server=10
 - 合服：`show_id` 唯一（玩家选服标识），`real_id` 不唯一——插一行同 real_id、
   不同 show_id 的记录即完成合服展示，玩家从任一展示口进入都路由到同一 game 组；
   进服登记按 real_id 去重（换展示口不算新注册），`register_count` 按展示行分别统计
+- 多角色模型：一个账号在一个服可有多个角色（合服后必然出现）。角色档以 `role_id`
+  为主键（`account` 只作展示与查询索引），`role_id = {real_id}_{objectid}`
+  （服号前缀让各服命名空间天然隔离，合服搬档角色 ID 永不冲突；ID 不改写，
+  前缀记录出生服）；选服统一返回角色列表进角色面板
+  （按 `login_time` 最近登录倒序，**默认选中上次玩的角色**，一键进游戏）；
+  创角表单常驻面板底部（玩家自选角色名 + 性别，角色名本服唯一），随时可再建新角色；
+  顶号策略按服配置（`game/config_<server>.json` 的 `singleRoleOnline`，默认 true）：
+  true = 单角色在线（微信登录这类平台账号），进新角色踢掉同账号其它在线角色；
+  false = 多角色可同时在线，顶号只踢同 role 的重登；
+  充值按 `role` 精准发货（多角色账号缺省 `role` 会被拒，返回 `role required`）
+- 角色现居服解析（servers 表重定向）：role_id 前缀是出生服 real_id，合服后老服行
+  保留不删（status=备用不展示，`real_id` 指向迁入服），多次合并形成重定向链；
+  recharge 带 `role` 不带 `server` 时跨组调 `login.resolveServer` 逐跳解析现居服，
+  **支付回调带 `role` 即可，不用带 `server`**（`server` 参数保留兼容）
 - 注册控制：`account_servers` 表记录账号进过哪些服；新注册时爆满（status=3，
   返回 `server busy`）或 `register_count >= max_register`（>0，返回 `server full`）
   的服拒绝进入，老玩家回自己的服不受限
@@ -134,9 +150,11 @@ curl "http://127.0.0.1:41100/pay?account=tester&item=diamond&count=100&server=10
 
 ## 数据层（增量更新）
 
-- **game 组 → MongoDB**：玩家角色档（`player` 集合）。进入游戏时加载、新号建档；
-  字段经 `DirtyRecord` 追踪，每 `dataSaveInterval` 秒只把**脏字段 $set** 回库，
-  充值到账 / 下线 / 被踢时立即落库。
+- **game 组 → MongoDB**：玩家角色档（`player` 集合，主键 `role_id`，`account` 建索引、
+  `name` 建唯一索引）。角色档由 `world.createRole` 创建（玩家自选角色名/性别，
+  角色名本服唯一），进入游戏时按 role_id 加载；字段经 `DirtyRecord` 追踪，
+  每 `dataSaveInterval` 秒只把**脏字段 $set** 回库，充值到账 / 下线 / 被踢时立即落库。
+  老档启动时自动补 `role_id`（= 文档 `_id`）与默认 `sex`。
 - **login 组 → PostgreSQL**：`accounts` 表。老号登录只 UPDATE `login_count` /
   `last_login` 两列。`servers` 表驱动选服列表与注册控制（show_id 展示服号 /
   real_id 真实服号 / status / is_recommend / register_count / max_register），
@@ -182,15 +200,21 @@ python tools/cli.py game stop game3          # 优雅缩容：踢人落库 -> �
 ## 登录链路（端到端）
 
 1. 客户端 TCP 连 login 服务（11100），发 `login.auth {account, password}` 验证账号，
-   返回可选服务器列表 `servers`；**只有一个服时直接顺路发令牌**，响应里带
-   `{server, token, gameAddr}`，客户端跳到第 3 步
-2. 多个服时玩家选定后发 `login.enterServer {server}`：login 生成 token，**跨组调用**该服
-   game 组全局进程 `world.prepareLogin` 登记令牌，按账号哈希分配 gameN 进程，
-   返回 `{token, gameAddr}`
-3. 客户端连 gameAddr，发 `game.enter {account, token}`
-4. gameN **组内调用** master 的 `world.verifyToken` 验证（支持顶号踢人），
-   验证通过创建 Player actor 绑定会话
-5. 之后客户端的 `player.*` 消息全部进入该玩家 actor 串行处理
+   返回可选服务器列表 `servers`；**只有一个服时直接顺路完成选服**（同第 2 步）
+2. 玩家选定后发 `login.enterServer {server}`：状态拦截 + 注册控制后，**跨组调用**该服
+   `world.listRoles` 查角色列表，**统一返回 `roles` 列表**（含
+   `role/name/sex/level/login_time`，按最近登录倒序，0/1/多个都进角色面板：
+   默认选中上次玩的角色一键进游戏，创角表单常驻面板底部，随时可再建新角色），
+   进第 3 步
+3. 玩家自选名字/性别发 `login.createRole {server, name, sex}`
+   （跨组调 `world.createRole` 建档：角色名本服唯一 1-12 字，`sex` 1=男 2=女，
+   重名返回 `name taken`）；或选定已有角色发 `login.enterRole {server, role}`；
+   两者都发令牌返回 `{role, token, gameAddr}`
+4. 客户端连 gameAddr，发 `game.enter {account, role, token}`
+5. gameN **组内调用** master 的 `world.verifyToken` 验证（同角色重登顶号踢人；
+   同账号不同角色互不顶号，可同时在线），验证通过按 role_id 加载角色档，
+   创建 Player actor（寻址名 `player:<role_id>`）绑定会话
+6. 之后客户端的 `player.*` 消息全部进入该玩家 actor 串行处理
 
 ## 热更新说明
 

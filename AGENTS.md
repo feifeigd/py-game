@@ -43,6 +43,9 @@ Python3 asyncio + actor 模型的分布式游戏服务器框架，配套 Unity �
 ## 多角色模型（2026-11 起，bmad 块外持久保存）
 
 - 一个账号在一个服可有多个角色（合服场景）：身份一律用 `role_id`（player 档主键、actor 寻址名 `player:<role_id>`、world 位置表/离线充值的键），`account` 只用于展示和按号查角色列表（`world.listRoles`）
-- 客户端链路：`login.auth` -> `login.enterServer`（0/1 角色直发令牌，多角色返回 roles）-> `login.enterRole`（role="" 新建角色）-> `game.enter {account, role, token}`
+- `role_id = {real_id}_{objectid}`（出生服前缀，命名空间隔离，合服不改写 ID）；角色现居服由 servers 表的 real_id 重定向解析（合服后老服行保留、real_id 指向迁入服，多次合并成链），recharge 凭 `login.resolveServer` 解析 role_id 前缀定位角色所在服，支付回调不用带 server
+- 客户端链路：`login.auth` -> `login.enterServer`（统一返回 roles 角色列表，0/1/多个都进角色面板）-> `login.createRole {server, name, sex}` 创角 或 `login.enterRole {server, role}` 选角 -> `game.enter {account, role, token}`
+- 创角在 game 组 `world.createRole` 建档：角色名本服唯一（player 集合 `name` 唯一索引兜底 + count 预检，重名报 `name taken`），性别枚举在 `game/app/const.py`（`SEX_MALE=1` / `SEX_FEMALE=2`），名字长度上限 `ROLE_NAME_MAX=12`；`game.enter` 只按 role_id 加载，不再建档
+- 顶号策略按服配置：`game/config_<server>.json` 的 `singleRoleOnline`（默认 true = 单角色在线，进新角色踢同账号其它在线角色；false = 多角色可同时在线，只顶同 role 重登）
 - 充值按角色发货：`/pay` 带 `role` 参数；多角色账号缺省 role 会被拒（`role required`）
 - 服状态枚举在 `login/app/const.py` 的 `ServerStatus`（0=维护/1=良好/2=拥挤/3=爆满/4=备用），业务代码不要写 status 数字

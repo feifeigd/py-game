@@ -18,6 +18,7 @@ public class Bootstrap : MonoBehaviour
     private Font _font;
     private GameObject _loginPanel;
     private GameObject _serverPanel;
+    private GameObject _rolePanel;
     private GameObject _hudPanel;
     private InputField _accountInput;
     private InputField _passwordInput;
@@ -52,6 +53,7 @@ public class Bootstrap : MonoBehaviour
     {
         _loginPanel.SetActive(true);
         if (_serverPanel != null) _serverPanel.SetActive(false);
+        if (_rolePanel != null) _rolePanel.SetActive(false);
         _hudPanel.SetActive(false);
     }
 
@@ -64,10 +66,21 @@ public class Bootstrap : MonoBehaviour
         _serverPanel = BuildServerPanel(_loginPanel.transform.parent, servers);
     }
 
+    /// <summary>选服后多角色时展示角色列表（含"新建角色"按钮）</summary>
+    public void ShowRoleSelect(List<RoleInfo> roles)
+    {
+        _loginPanel.SetActive(false);
+        if (_serverPanel != null) _serverPanel.SetActive(false);
+        _hudPanel.SetActive(false);
+        if (_rolePanel != null) Destroy(_rolePanel);
+        _rolePanel = BuildRolePanel(_loginPanel.transform.parent, roles);
+    }
+
     public void ShowHud()
     {
         _loginPanel.SetActive(false);
         if (_serverPanel != null) _serverPanel.SetActive(false);
+        if (_rolePanel != null) _rolePanel.SetActive(false);
         _hudPanel.SetActive(true);
     }
 
@@ -168,6 +181,87 @@ public class Bootstrap : MonoBehaviour
                     err => SetStatus("进入服务器失败: " + err));
             });
         }
+        return panel;
+    }
+
+    /// <summary>角色面板：已有角色一人一个按钮（含性别，点击选中），
+    /// 服务端按最近登录倒序，默认选中上次玩的角色，"进入游戏"进选中角色；
+    /// 底部是创角表单（名字输入 + 性别切换 + 创建并进入），
+    /// 0 个角色时只显示创角表单</summary>
+    private GameObject BuildRolePanel(Transform parent, List<RoleInfo> roles)
+    {
+        int height = 400 + roles.Count * 70;
+        var panel = MakePanel(parent, "RolePanel", new Vector2(0, 40),
+            new Vector2(460, height));
+
+        MakeText(panel.transform, "RoleTitle", roles.Count > 0 ? "选择角色" : "创建角色",
+            new Vector2(0, height / 2 - 50), new Vector2(400, 50), 26,
+            TextAnchor.MiddleCenter);
+
+        int y = height / 2 - 130;
+        string selected = roles.Count > 0 ? roles[0].role : null;   // 默认选中最近登录的
+        Text marker = null;
+        if (roles.Count > 0)
+            marker = MakeText(panel.transform, "SelectedMarker", "▶",
+                new Vector2(-190, y), new Vector2(40, 52), 24, TextAnchor.MiddleCenter);
+
+        for (int i = 0; i < roles.Count; i++)
+        {
+            var info = roles[i];
+            int btnY = y - i * 70;
+            string sexTag = info.sex == 2 ? "（女）" : "（男）";
+            string recentTag = i == 0 ? " ·最近" : "";
+            var btn = MakeButton(panel.transform, $"Role{i}",
+                $"{info.name}{sexTag}  Lv.{info.level}{recentTag}",
+                new Vector2(0, btnY), new Vector2(300, 52));
+            btn.onClick.AddListener(() =>
+            {
+                selected = info.role;
+                marker.rectTransform.anchoredPosition = new Vector2(-190, btnY);
+            });
+        }
+        y -= roles.Count * 70;
+
+        if (roles.Count > 0)
+        {
+            var enterBtn = MakeButton(panel.transform, "EnterGame", "进入游戏",
+                new Vector2(0, y), new Vector2(300, 52));
+            enterBtn.onClick.AddListener(() =>
+            {
+                SetStatus("进入角色...");
+                GameManager.I.EnterRole(selected,
+                    err => SetStatus("进入角色失败: " + err));
+            });
+            y -= 80;
+            MakeText(panel.transform, "CreateLabel", "—— 新建角色 ——",
+                new Vector2(0, y + 15), new Vector2(300, 30), 16,
+                TextAnchor.MiddleCenter);
+        }
+
+        // 创角表单：角色名 + 性别 + 确认
+        var nameInput = MakeInput(panel.transform, "NameInput",
+            new Vector2(-60, y - 40), new Vector2(220, 36), "");
+        ((Text)nameInput.placeholder).text = "输入角色名（1-12字）";
+
+        int sex = 1;
+        var sexBtn = MakeButton(panel.transform, "SexToggle", "性别：男",
+            new Vector2(140, y - 40), new Vector2(100, 36));
+        sexBtn.onClick.AddListener(() =>
+        {
+            sex = sex == 1 ? 2 : 1;
+            sexBtn.GetComponentInChildren<Text>().text = sex == 1 ? "性别：男" : "性别：女";
+        });
+
+        var createBtn = MakeButton(panel.transform, "CreateRole", "创建并进入",
+            new Vector2(0, y - 110), new Vector2(300, 52));
+        createBtn.onClick.AddListener(() =>
+        {
+            string name = nameInput.text.Trim();
+            if (name.Length == 0) { SetStatus("请输入角色名"); return; }
+            SetStatus("创建角色...");
+            GameManager.I.CreateRole(name, sex,
+                err => SetStatus("创建角色失败: " + err));
+        });
         return panel;
     }
 

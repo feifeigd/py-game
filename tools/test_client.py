@@ -83,6 +83,7 @@ class GameClient(object):
                             data = json.loads(data)
                         except ValueError:
                             pass
+                    packet['data'] = data  # 解析结果写回，不然 pushes 里还是原始字符串
                     self.pushes.append(packet)
                     print('  [push] %s %s' % (packet.get('key'),
                                                 json.dumps(data, ensure_ascii=False)))
@@ -91,6 +92,24 @@ class GameClient(object):
 def http_get(url):
     with urllib.request.urlopen(url, timeout=10) as resp:
         return resp.read().decode('utf-8')
+
+
+def pick_role(client, account, server, enter_rsp):
+    """enterServer 之后按角色数分流: 单角色已直发令牌原样返回；
+    0 个角色走创角（自选名字/性别），多个角色选第一个，返回令牌响应"""
+    roles = enter_rsp.get('roles')
+    if roles is None:
+        return enter_rsp
+    if roles:
+        r = client.call('login.enterRole',
+                        {'server': server, 'role': roles[0]['role']})
+        print('  login.enterRole ->', json.dumps(r, ensure_ascii=False))
+    else:
+        r = client.call('login.createRole', {
+            'server': server, 'name': f'勇者_{account}', 'sex': 1})
+        print('  login.createRole ->', json.dumps(r, ensure_ascii=False))
+    assert r['ok'], r
+    return r
 
 
 def full_flow(account='tester', password='123456', server='1001'):
@@ -106,17 +125,20 @@ def full_flow(account='tester', password='123456', server='1001'):
         print(f'  单服直发令牌: server={result["server"]} gameAddr={result["gameAddr"]}')
         assert result['server'] == server, result
     else:
-        # 选服：发令牌 + 分配该服的 game 进程
+        # 选服：单角色直发令牌；无角色先创角，多角色再选角
         result = login_client.call('login.enterServer', {'server': server})
         print('  login.enterServer ->', json.dumps(result, ensure_ascii=False))
         assert result['ok'], result
         assert result.get('server') == server, result
+        result = pick_role(login_client, account, server, result)
     token, game_addr = result['token'], result['gameAddr']
+    role = result.get('role', '')
     login_client.close()
 
     print(f'== 2. 连接 game 进程 {game_addr} 并进入游戏 ==')
     game = GameClient().connect(game_addr)
-    result = game.call('game.enter', {'account': account, 'token': token})
+    result = game.call('game.enter',
+                       {'account': account, 'role': role, 'token': token})
     print('  game.enter ->', json.dumps(result, ensure_ascii=False))
     assert result['ok'], result
 
@@ -178,9 +200,11 @@ def test_server_isolation(account='zoner'):
         if not r.get('token'):   # 单服时 auth 已直发令牌，无需选服
             r = c.call('login.enterServer', {'server': server})
             assert r['ok'], r
+            r = pick_role(c, account, server, r)   # 无角色创角 / 多角色选角
         c.close()
         g = GameClient().connect(r['gameAddr'])
-        r2 = g.call('game.enter', {'account': account, 'token': r['token']})
+        r2 = g.call('game.enter', {'account': account, 'role': r.get('role', ''),
+                                   'token': r['token']})
         assert r2['ok'], r2
         return g, r2['player']
 

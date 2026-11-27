@@ -2,6 +2,8 @@
   "serverId": 1001,
   "serverType": "game",
   "dataSaveInterval": 30,
+  "singleRoleOnline": false,
+  "loginTokenTtl": 5,
   "log": {
     "level": "DEBUG",
     "path": "./log/1001",

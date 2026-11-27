@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, ROOT)
 sys.path.insert(1, os.path.join(ROOT, 'tools'))
 
-from test_client import full_flow, test_server_isolation  # noqa: E402
+from test_client import GameClient, full_flow, pick_role, test_server_isolation  # noqa: E402
 
 # (目录, 配置文件, 日志名)；game 组多开两个服
 GROUPS = [
@@ -95,6 +95,32 @@ def test_cluster_cannot_fake_enter():
     print('  cluster login.auth(session=None) -> 已拒绝:', result)
 
 
+def test_token_expiry(account='tokexp', server='1001'):
+    """令牌 TTL: 拿了令牌不来连 game，过期后 game.enter 必须被拒（token expired）"""
+    print(f'== 5.6 令牌过期: login 发令牌后等 TTL 再进 game，必须被拒 ==')
+    login_client = GameClient().connect('127.0.0.1:11100')
+    result = login_client.call('login.auth',
+                               {'account': account, 'password': '123456'})
+    assert result['ok'], result
+    if not result.get('token'):
+        result = login_client.call('login.enterServer', {'server': server})
+        assert result['ok'], result
+        result = pick_role(login_client, account, server, result)
+    token, game_addr = result['token'], result['gameAddr']
+    role = result.get('role', '')
+    login_client.close()
+
+    # config_1001.json loginTokenTtl=5，等 6 秒让令牌过期
+    time.sleep(6)
+    game = GameClient().connect(game_addr)
+    result = game.call('game.enter',
+                       {'account': account, 'role': role, 'token': token})
+    assert not result.get('ok'), result
+    assert result.get('error') == 'token expired', result
+    print('  过期令牌 game.enter -> 已拒绝: token expired ✓')
+    game.close()
+
+
 def wait_port(port, timeout=60):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -130,6 +156,7 @@ def main():
 
         test_cluster_cannot_fake_enter()
         full_flow('tester', '123456', server='1001')
+        test_token_expiry()
 
         print('== 6. 热更新演示: 对 game 服 1001 所有服务 reload app 包 ==')
         result = subprocess.run(
